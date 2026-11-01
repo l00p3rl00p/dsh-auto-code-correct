@@ -297,7 +297,7 @@ export function apply(ctx: Context, config: Config): void {
   function workingDirectory(filePath: string, checker: CheckerConfig): string {
     const extension = extensionOf(filePath)
     const markers = extension === '.rs' ? ['Cargo.toml']
-      : extension === '.ts' || extension === '.tsx' ? ['tsconfig.json', 'package.json']
+      : extension === '.ts' || extension === '.tsx' ? (checker.name === 'typescript-check' ? ['tsconfig.json'] : ['package.json', 'tsconfig.json'])
       : []
     if (markers.length === 0) return resolve(checker.cwd)
     let dir = dirname(filePath)
@@ -328,7 +328,10 @@ export function apply(ctx: Context, config: Config): void {
       return { checker: checker.name, output: errorMessage(error) }
     }
     const argv = substitute(checker.argv, filePath, cwd)
-    argv[0] = config.executables[argv[0] as string] ?? argv[0] as string
+    const requested = argv[0] as string
+    const localExecutable = resolve(cwd, 'node_modules', '.bin', requested)
+    // Respect a user-specified executable first, then project dependencies, then PATH.
+    argv[0] = config.executables[requested] ?? (existsSync(localExecutable) ? localExecutable : requested)
 
     let executable: string
     try {
