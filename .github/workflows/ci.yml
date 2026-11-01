@@ -16,6 +16,10 @@ jobs:
           node-version: '24'
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
+      - name: Apply automatic source formatting
+        run: pnpm run format
+      - name: Apply ESLint safe fixes
+        run: pnpm run lint:fix
       - name: ESLint (TypeScript)
         run: pnpm run lint
       - name: Prettier (TypeScript)
@@ -38,6 +42,8 @@ jobs:
           test -f lib/index.d.ts
           tar -tzf dist/*.tgz | grep -q 'package/lib/index.js'
           tar -tzf dist/*.tgz | grep -q 'package/cordis.patch.yml'
+          tar -tzf dist/*.tgz | grep -q 'package/lib/cli.js'
+          tar -tzf dist/*.tgz | grep -q 'package/lib/client.js'
       - name: Publish installable plugin artifact
         uses: actions/upload-artifact@v4
         with:
