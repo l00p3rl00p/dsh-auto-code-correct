@@ -40,3 +40,14 @@ export const LANGUAGE_EXTENSIONS: Readonly<Record<Language, readonly string[]>> 
 export function languageForExtension(extension: string): Language | undefined {
   return (Object.keys(LANGUAGE_EXTENSIONS) as Language[]).find(lang => LANGUAGE_EXTENSIONS[lang].includes(extension))
 }
+
+/** Runtime capability admission; called by both the UI model and execution path. */
+export function capabilityEnabled(
+  language: Language | undefined,
+  capabilityId: string,
+  languages: Readonly<Record<Language, boolean>>,
+  toggles: Readonly<Record<string, boolean>>,
+): boolean {
+  if (language === undefined || languages[language] !== true) return false
+  return toggles[capabilityId] !== false
+}
