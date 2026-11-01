@@ -65,16 +65,17 @@ See [ARCHITECTURE.md](ARCHITECTURE.md#two-event-architecture) for the full imple
 6. Test failed edit, missing executable, failed fixer, failed checker, and cancellation. A failed edit must not initiate ACC; a failing fixer must stop further **mutating** fixers; read-only verifier results and failures must remain visible.
 7. Restart DSH and confirm saved native settings and enabled/disabled LSP behavior persist. A CI mock cannot substitute for this installed-profile test.
 
-### Event B — Git pre-commit checks (opt-in installation)
+### Event B — Git pre-commit checks (default on)
 
 ```sh
 # Run from the disposable Git repository where ACC's CLI is available:
-acc-tools hygiene git-diff gitleaks large-files
-# Only if the repo does not already have a pre-commit hook or core.hooksPath:
+acc-tools hygiene git-diff gitleaks shellcheck
+# The native DSH plugin installs/chains the Git hook automatically on activation/edit.
+# This optional command re-synchronizes it explicitly:
 acc-tools hooks install
 ```
 
-The installed hook resides at **the current repository's Git-dir `hooks/pre-commit`** and invokes `acc-tools hygiene`. Existing hook and `core.hooksPath` configurations are not overwritten. The hook uses `<project-root>/.acc-hygiene.json` when present, otherwise the CLI's `git-diff`, `gitleaks`, `large-files` fallback. Optional `shellcheck`, `dependency-audit`, `license-audit` and `history-secrets` are defined in `src/cli.ts` / `src/capabilities.ts`; only enable checks appropriate to the Git boundary. The history scan is not a default pre-commit action.
+The installed hook resides at the effective Git hooks path (`<git-dir>/hooks/pre-commit` or the configured `core.hooksPath`) and invokes `acc-tools hygiene`. Existing pre-commit content is retained and chained. The hook reads `<git-dir>/acc-hygiene-effective.json`, a generated projection of DSH native settings. Default checks are `git-diff`, `gitleaks`, and `shellcheck`; `large-files`, `dependency-audit`, `license-audit`, and `history-secrets` are optional. A disabled `hygieneEnabled` causes the hook to skip checks.
 
 Exact implemented commands include:
 - `git diff --cached --check` for staged whitespace/conflict-marker checks.
@@ -85,7 +86,7 @@ Exact implemented commands include:
 
 Test with a known failure in a disposable repository. The hook should fail the commit and print a diagnostic rather than silently succeeding. Remove the test changes rather than bypassing the hook.
 
-**Known one-config gap:** current native DSH Code Hygiene switches in `src/client/index.tsx` are not read by `acc-tools hygiene`; the hook reads project-local `.acc-hygiene.json`. This does not yet fulfill the contract of one effective configuration across all three groups. Do not claim otherwise or add a third config system to mask the gap.
+**Single effective configuration:** the DSH native UI sets `hygieneEnabled` and capability toggles. ACC emits the generated policy to the Git directory on plugin activation or a successful edit; `acc-tools hygiene` reads it at commit time. Verify a changed toggle is projected before committing, especially if the agent has not edited a file since the change. Git hooks are machine-local; a Mac-side Git commit cannot use a Docker-only executable path unless `acc-tools` is installed on the host PATH.
 
 ### Contract-focused CI and release acceptance
 
