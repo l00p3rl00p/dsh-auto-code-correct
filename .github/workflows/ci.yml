@@ -48,6 +48,12 @@ jobs:
           tar -tzf dist/*.tgz | grep -q 'package/cordis.patch.yml'
           tar -tzf dist/*.tgz | grep -q 'package/lib/cli.js'
           tar -tzf dist/*.tgz | grep -q 'package/lib/client.js'
+      - name: Install package into clean official DSH profile
+        env:
+          DSH_HOME: ${{ runner.temp }}/acc-dsh-home
+        run: |
+          pnpm dlx --package=@deepseek-ai/dsh@0.2.1-rc.5 dsh plugin --profile acc-ci add ./dist/dsh-auto-code-correct-0.1.0.tgz
+          pnpm dlx --package=@deepseek-ai/dsh@0.2.1-rc.5 dsh --profile acc-ci --dump-config | grep -q auto-code-correct
       - name: Publish installable plugin artifact
         uses: actions/upload-artifact@v4
         with:
