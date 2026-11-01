@@ -14,11 +14,11 @@ export const CAPABILITIES: readonly Capability[] = [
   { id: 'ruff-format', label: 'Ruff formatter', group: 'autoCorrect', language: 'python', executable: 'ruff', description: 'Format Python files' },
   { id: 'ruff-verify', label: 'Ruff lint check', group: 'autoCorrect', language: 'python', executable: 'ruff', description: 'Verify Python lint' },
   { id: 'ty', label: 'ty', group: 'autoCorrect', language: 'python', executable: 'ty', description: 'Python type verification' },
-  { id: 'basedpyright', label: 'BasedPyright LSP', group: 'languageServer', language: 'python', executable: 'basedpyright-langserver', description: 'Python code navigation' },
+  { id: 'ty-lsp', label: 'ty language server', group: 'languageServer', language: 'python', executable: 'ty', description: 'Python code navigation using the installed ty server' },
   { id: 'rustfmt', label: 'rustfmt', group: 'autoCorrect', language: 'rust', executable: 'rustfmt', description: 'Format Rust' },
-  { id: 'clippy-fix', label: 'Clippy autofix', group: 'autoCorrect', language: 'rust', executable: 'cargo', description: 'Fix Rust lint' },
+  { id: 'clippy-fix', label: 'Clippy autofix', group: 'autoCorrect', language: 'rust', executable: 'cargo-clippy', description: 'Fix Rust lint' },
   { id: 'cargo-check', label: 'Cargo check', group: 'autoCorrect', language: 'rust', executable: 'cargo', description: 'Verify Rust compilation' },
-  { id: 'clippy-verify', label: 'Clippy lint', group: 'autoCorrect', language: 'rust', executable: 'cargo', description: 'Verify Rust lint' },
+  { id: 'clippy-verify', label: 'Clippy lint', group: 'autoCorrect', language: 'rust', executable: 'cargo-clippy', description: 'Verify Rust lint' },
   { id: 'rust-analyzer', label: 'rust-analyzer LSP', group: 'languageServer', language: 'rust', executable: 'rust-analyzer', description: 'Rust code navigation' },
   { id: 'eslint-fix', label: 'ESLint autofix', group: 'autoCorrect', language: 'typescript', executable: 'eslint', description: 'Fix TypeScript lint' },
   { id: 'prettier', label: 'Prettier', group: 'autoCorrect', language: 'typescript', executable: 'prettier', description: 'Format TypeScript' },
@@ -39,4 +39,15 @@ export const LANGUAGE_EXTENSIONS: Readonly<Record<Language, readonly string[]>> 
 }
 export function languageForExtension(extension: string): Language | undefined {
   return (Object.keys(LANGUAGE_EXTENSIONS) as Language[]).find(lang => LANGUAGE_EXTENSIONS[lang].includes(extension))
+}
+
+/** Runtime capability admission; called by both the UI model and execution path. */
+export function capabilityEnabled(
+  language: Language | undefined,
+  capabilityId: string,
+  languages: Readonly<Record<Language, boolean>>,
+  toggles: Readonly<Record<string, boolean>>,
+): boolean {
+  if (language === undefined || languages[language] !== true) return false
+  return toggles[capabilityId] !== false
 }

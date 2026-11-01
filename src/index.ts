@@ -11,9 +11,11 @@
 
 import { dirname, isAbsolute, relative, resolve, parse } from 'node:path'
 import { existsSync } from 'node:fs'
-import { CAPABILITIES, languageForExtension } from './capabilities.js'
+import { capabilityEnabled, languageForExtension } from './capabilities.js'
+import { registerAccCommands } from './commands.js'
 import type { Language } from './capabilities.js'
 import * as nativeLspStdio from '@deepseek-ai/dsh-lsp-stdio'
+import * as lspActions from 'dsh-lsp-actions'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -113,7 +115,12 @@ export const Config: z<Config> = z.object({
  * is load-bearing: an unlabeled context renders as a user prompt in derived
  * history.
  */
-const PLUGIN_SOURCE: MessageSource = { kind: 'plugin', plugin: 'auto-code-correct' }
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'auto-code-correct': { kind: 'auto-code-correct' }
+  }
+}
+const PLUGIN_SOURCE: MessageSource = { kind: 'auto-code-correct' }
 
 /** One checker's verdict for one file. */
 interface Finding {
@@ -231,11 +238,10 @@ function validateCheckers(checkers: readonly CheckerConfig[]): void {
  * @param config - validated {@link Config}; checker invariants are re-checked fail-loud here.
  */
 export function apply(ctx: Context, config: Config): void {
+  registerAccCommands(ctx)
   validateCheckers([...config.fixers, ...config.checkers])
   const effectiveEnabled = (extension: string, name: string): boolean => {
-    const lang = languageForExtension(extension)
-    if (!lang || !config.languages[lang]) return false
-    return config.capabilities[name] !== false
+    return capabilityEnabled(languageForExtension(extension), name, config.languages, config.capabilities)
   }
   if (!Number.isInteger(config.maxDiagnosticChars) || config.maxDiagnosticChars < 1) {
     throw new Error(`auto-code-correct: invalid maxDiagnosticChars ${config.maxDiagnosticChars} — must be an integer >= 1`)
@@ -252,7 +258,7 @@ export function apply(ctx: Context, config: Config): void {
   ctx.inject(['fs', 'lsp', 'subprocess'], async scoped => {
     const entries: Record<string, { command: string; args: string[]; extensionToLanguage: Record<string, string> }> = {}
     const requested = [
-      { language: 'python' as const, id: 'basedpyright', command: 'basedpyright-langserver', args: ['--stdio'], mapping: { '.py': 'python' } },
+      { language: 'python' as const, id: 'ty-lsp', command: 'ty', args: ['server'], mapping: { '.py': 'python' } },
       { language: 'rust' as const, id: 'rust-analyzer', command: 'rust-analyzer', args: [], mapping: { '.rs': 'rust' } },
       { language: 'typescript' as const, id: 'typescript-lsp', command: 'typescript-language-server', args: ['--stdio'], mapping: { '.ts': 'typescript', '.tsx': 'typescriptreact' } },
     ]
@@ -261,12 +267,39 @@ export function apply(ctx: Context, config: Config): void {
       const command = config.executables[item.command] ?? item.command
       try {
         await scoped.subprocess.resolveExecutable(command)
-        entries[item.language] = { command, args: item.args, extensionToLanguage: item.mapping }
+        entries[item.language] = { command, args: item.args, extensionToLanguage: Object.fromEntries(Object.entries(item.mapping).filter(([, v]) => typeof v === 'string')) as Record<string, string> }
       } catch (error) {
         console.warn(`[auto-code-correct] ${item.id} unavailable; install it and reload ACC: ${errorMessage(error)}`)
       }
     }
     if (Object.keys(entries).length) scoped.plugin(nativeLspStdio, { servers: entries })
+  })
+
+  // Reuse the existing multi-language LSP actions plugin. It accepts an arbitrary
+  // table of language servers; no fork or three copies of its client are needed.
+  // Already-registered action tools remain authoritative and are not duplicated.
+  ctx.inject(['fs', 'tools', 'subprocess'], async scoped => {
+    const actionNames = ['lsp_diagnostics', 'lsp_format', 'lsp_completion', 'lsp_code_action']
+    if (actionNames.some(action => scoped.tools.get(action))) {
+      console.info('[auto-code-correct] existing LSP action tools detected; retaining them')
+      return
+    }
+    const entries: Record<string, { command: string; args: string[]; extensionToLanguage: Record<string, string>; projectMarkers: string[] }> = {}
+    for (const option of [
+      { language: 'python' as const, id: 'ty-lsp', command: 'ty', args: ['server'], mapping: { '.py': 'python' }, markers: ['pyproject.toml'] },
+      { language: 'rust' as const, id: 'rust-analyzer', command: 'rust-analyzer', args: [], mapping: { '.rs': 'rust' }, markers: ['Cargo.toml'] },
+      { language: 'typescript' as const, id: 'typescript-lsp', command: 'typescript-language-server', args: ['--stdio'], mapping: { '.ts': 'typescript', '.tsx': 'typescriptreact' }, markers: ['tsconfig.json', 'package.json'] },
+    ]) {
+      if (!config.languages[option.language] || !config.languageServers[option.language] || config.capabilities[option.id] === false) continue
+      const command = config.executables[option.command] ?? option.command
+      try {
+        await scoped.subprocess.resolveExecutable(command)
+        entries[option.language] = { command, args: option.args, extensionToLanguage: Object.fromEntries(Object.entries(option.mapping).filter(([, v]) => typeof v === 'string')) as Record<string, string>, projectMarkers: option.markers }
+      } catch (error) {
+        console.warn(`[auto-code-correct] LSP actions for ${option.language} unavailable: ${errorMessage(error)}`)
+      }
+    }
+    if (Object.keys(entries).length > 0) scoped.plugin(lspActions, { servers: entries, editor: { enabled: false } })
   })
 
   const watchedTools = new Set(config.tools)
@@ -294,7 +327,7 @@ export function apply(ctx: Context, config: Config): void {
   function workingDirectory(filePath: string, checker: CheckerConfig): string {
     const extension = extensionOf(filePath)
     const markers = extension === '.rs' ? ['Cargo.toml']
-      : extension === '.ts' || extension === '.tsx' ? ['tsconfig.json', 'package.json']
+      : extension === '.ts' || extension === '.tsx' ? (checker.name === 'typescript-check' ? ['tsconfig.json'] : ['package.json', 'tsconfig.json'])
       : []
     if (markers.length === 0) return resolve(checker.cwd)
     let dir = dirname(filePath)
@@ -325,7 +358,10 @@ export function apply(ctx: Context, config: Config): void {
       return { checker: checker.name, output: errorMessage(error) }
     }
     const argv = substitute(checker.argv, filePath, cwd)
-    argv[0] = config.executables[argv[0] as string] ?? argv[0] as string
+    const requested = argv[0] as string
+    const localExecutable = resolve(cwd, 'node_modules', '.bin', requested)
+    // Respect a user-specified executable first, then project dependencies, then PATH.
+    argv[0] = config.executables[requested] ?? (existsSync(localExecutable) ? localExecutable : requested)
 
     let executable: string
     try {
