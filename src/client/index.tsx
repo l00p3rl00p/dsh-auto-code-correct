@@ -13,6 +13,7 @@ type Settings = {
   languages?: Record<Language, boolean>
   capabilities?: Record<string, boolean>
   languageServers?: Record<Language, boolean>
+  hygieneEnabled?: boolean
   executables?: Record<string, string>
 }
 const FALLBACK: Record<Language, boolean> = { python: true, rust: false, typescript: false }
@@ -88,8 +89,10 @@ function ConfigPage({ scope }: { scope: ConfigForm<Settings> }): React.JSX.Eleme
     {panel('1. Languages and tools', <p>Enable only the languages you need. Each language owns its autofix, verification, and LSP controls.</p>)}
     {languagePanels}
     {panel('4. Repository Hygiene', <>
+      {switchRow('hygieneEnabled', 'Enable automatic Git pre-commit hygiene', value.hygieneEnabled !== false, ['hygieneEnabled'])}
+      <p>Enabled by default. At the next native ACC edit, the repository Git pre-commit hook uses this saved profile configuration. Existing hooks are chained rather than replaced.</p>
       <p>Checks run at Git boundaries; a history scan is manual. The Git hook uses the same capability identifiers.</p>
-      {CAPABILITIES.filter(cap => cap.group === 'hygiene').map(cap => switchRow(cap.id, cap.label, capabilities[cap.id] === true || (capabilities[cap.id] === undefined && ['git-diff','gitleaks','large-files'].includes(cap.id)), ['capabilities', cap.id]))}
+      {CAPABILITIES.filter(cap => cap.group === 'hygiene').map(cap => switchRow(cap.id, cap.label, capabilities[cap.id] === true || (capabilities[cap.id] === undefined && ['git-diff','gitleaks','shellcheck'].includes(cap.id)), ['capabilities', cap.id], value.hygieneEnabled === false))}
     </>)}
     {panel('Dependency installation', <>
       <p>ACC reuses installed tools first. A missing tool must be installed explicitly using its manager; toggling does not silently install or uninstall anything.</p>
