@@ -294,7 +294,7 @@ export function apply(ctx: Context, config: Config): void {
       const command = config.executables[option.command] ?? option.command
       try {
         await scoped.subprocess.resolveExecutable(command)
-        entries[option.language] = { command, args: option.args, extensionToLanguage: option.mapping, projectMarkers: option.markers }
+        entries[option.language] = { command, args: option.args, extensionToLanguage: Object.fromEntries(Object.entries(option.mapping).filter(([, v]) => typeof v === 'string')) as Record<string, string>, projectMarkers: option.markers }
       } catch (error) {
         console.warn(`[auto-code-correct] LSP actions for ${option.language} unavailable: ${errorMessage(error)}`)
       }
