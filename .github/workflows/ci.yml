@@ -1,4 +1,4 @@
-name: ACC CI
+name: DeepSeek Harness Plugin Packager
 on:
   push:
   pull_request:
@@ -32,9 +32,16 @@ jobs:
         run: |
           mkdir -p dist
           pnpm pack --pack-destination dist
+      - name: Verify package contents
+        run: |
+          test -f lib/index.js
+          test -f lib/index.d.ts
+          tar -tzf dist/*.tgz | grep -q 'package/lib/index.js'
+          tar -tzf dist/*.tgz | grep -q 'package/cordis.patch.yml'
       - name: Publish installable plugin artifact
         uses: actions/upload-artifact@v4
         with:
           name: dsh-auto-code-correct-plugin
           path: dist/*.tgz
           if-no-files-found: error
+          retention-days: 90
