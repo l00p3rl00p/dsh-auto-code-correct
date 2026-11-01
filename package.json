@@ -75,6 +75,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src test",
     "formatcheck": "prettier --check 'src/**/*.ts' 'test/**/*.ts'",
-    "verify": "pnpm run lint && pnpm run formatcheck && pnpm run typecheck && pnpm test && pnpm run build"
+    "verify": "pnpm run lint && pnpm run formatcheck && pnpm run typecheck && pnpm test && pnpm run build",
+    "prepare": "pnpm run build",
+    "packcheck": "pnpm pack --pack-destination ./dist"
   }
 }
