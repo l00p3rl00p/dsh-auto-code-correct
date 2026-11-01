@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { findTool, configuredToolDirectories } from '../src/discovery.js'
@@ -44,6 +44,13 @@ describe('Docker installer ↔ ACC capability coverage', () => {
   // Exact executables installed by QDev Code-and-Quality; checked against its canonical shell installer.
   const dockerTools = ['ruff', 'ty', 'cargo', 'rustfmt', 'cargo-clippy', 'rust-analyzer', 'eslint', 'prettier', 'tsc', 'typescript-language-server', 'shellcheck', 'gitleaks']
   const accTools = new Set(CAPABILITIES.map(cap => cap.executable))
+  const sourcePath = process.env.ACC_DOCKER_INSTALLER
+  const source = sourcePath ? readFileSync(sourcePath, 'utf8') : undefined
+  it('the real Docker installer still declares the exact tool inventory', () => {
+    if (!source) return
+    for (const tool of dockerTools) expect(source, `Docker installer changed: ${tool}`).toContain(tool)
+    expect(source).toContain('ROOT=/home/qdev/llm-runtime')
+  })
   it('ACC accounts for all Docker-installed helper executables', () => {
     expect(dockerTools.filter(tool => !accTools.has(tool))).toEqual([])
   })
