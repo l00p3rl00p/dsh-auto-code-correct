@@ -29,3 +29,10 @@ Do not create new Markdown files for routine decisions or experiments: revise th
 ## License
 
 MIT, preserving attribution to dsh-lens-lite. See upstream for original copyright and license terms.
+
+
+## Behavior at a glance
+
+ACC has **one plugin with three groups**: **Auto-Correct**, **Language Servers**, and **Code Hygiene**. After an enabled successful code edit it automatically runs the matching Python, Rust or TypeScript correction-and-verification pipeline and surfaces remaining diagnostics to the agent. Language servers use native DSH/LSP extensions and respect on/off switches. Git hygiene runs **at the Git boundary**, not after each edit, and requires the optional native `acc-tools hooks install` setup.
+
+The complete [implementation contract, architecture diagrams, language matrix and known delivery gaps](ARCHITECTURE.md#implementation-contract--restored-from-acc-design-decisions-2026-11-01) are in `ARCHITECTURE.md`. The [two-event verification procedure](RUNBOOK.md#two-independent-event-acceptance-tests) is in `RUNBOOK.md`; exact setting/file flags are in `ENVIRONMENT.md`. **Current limitation:** the DSH Code Hygiene settings UI and Git hook do not yet share one effective toggle source, so do not treat the three-group contract as fully proven.
