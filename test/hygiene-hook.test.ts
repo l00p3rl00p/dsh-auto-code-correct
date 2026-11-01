@@ -49,6 +49,23 @@ describe('default-on Git hygiene projection and native pre-commit integration', 
     expect(readEffectiveHygiene(root).enabled).toBe(false)
     expect(readFileSync(hook, 'utf8')).toBe(content)
   })
+  it('blocks a Git commit when ACC hygiene fails, even if an older hook follows', () => {
+    const root = repository()
+    const loc = gitLocations(root)!
+    mkdirSync(loc.hookDir, { recursive: true })
+    writeFileSync(join(loc.hookDir, 'pre-commit'), '#!/bin/sh\\necho original > original-ran\\n', { mode: 0o755 })
+    syncGitHygiene(root, { enabled: true, checks: [...DEFAULT_HYGIENE] })
+    const bin = join(root, '.fake-bin')
+    mkdirSync(bin)
+    writeFileSync(join(bin, 'acc-tools'), '#!/bin/sh\\nexit 23\\n', { mode: 0o755 })
+    writeFileSync(join(root, 'example.txt'), 'example\\n')
+    const env = { ...process.env, PATH: bin + ':' + (process.env.PATH ?? '') }
+    expect(spawnSync('git', ['add', 'example.txt'], { cwd: root, env }).status).toBe(0)
+    const commit = spawnSync('git', ['-c', 'user.name=ACC Test', '-c', 'user.email=acc@example.invalid',
+      'commit', '-m', 'must block'], { cwd: root, env, encoding: 'utf8' })
+    expect(commit.status).not.toBe(0)
+    expect(existsSync(join(root, 'original-ran'))).toBe(false)
+  })
   it('uses the Git configured hooksPath without discarding hooks', () => {
     const root = repository()
     const configured = spawnSync('git', ['config', 'core.hooksPath', '.custom-hooks'], { cwd: root })
