@@ -264,7 +264,7 @@ export function apply(ctx: Context, config: Config): void {
       const command = config.executables[item.command] ?? item.command
       try {
         await scoped.subprocess.resolveExecutable(command)
-        entries[item.language] = { command, args: item.args, extensionToLanguage: { ...item.mapping } }
+        entries[item.language] = { command, args: item.args, extensionToLanguage: Object.fromEntries(Object.entries(item.mapping).filter(([, v]) => typeof v === 'string')) as Record<string, string> }
       } catch (error) {
         console.warn(`[auto-code-correct] ${item.id} unavailable; install it and reload ACC: ${errorMessage(error)}`)
       }
