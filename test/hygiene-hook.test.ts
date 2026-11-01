@@ -53,12 +53,12 @@ describe('default-on Git hygiene projection and native pre-commit integration', 
     const root = repository()
     const loc = gitLocations(root)!
     mkdirSync(loc.hookDir, { recursive: true })
-    writeFileSync(join(loc.hookDir, 'pre-commit'), '#!/bin/sh\\necho original > original-ran\\n', { mode: 0o755 })
+    writeFileSync(join(loc.hookDir, 'pre-commit'), '#!/bin/sh\necho original > original-ran\n', { mode: 0o755 })
     syncGitHygiene(root, { enabled: true, checks: [...DEFAULT_HYGIENE] })
     const bin = join(root, '.fake-bin')
     mkdirSync(bin)
-    writeFileSync(join(bin, 'acc-tools'), '#!/bin/sh\\nexit 23\\n', { mode: 0o755 })
-    writeFileSync(join(root, 'example.txt'), 'example\\n')
+    writeFileSync(join(bin, 'acc-tools'), '#!/bin/sh\nexit 23\n', { mode: 0o755 })
+    writeFileSync(join(root, 'example.txt'), 'example\n')
     const env = { ...process.env, PATH: bin + ':' + (process.env.PATH ?? '') }
     expect(spawnSync('git', ['add', 'example.txt'], { cwd: root, env }).status).toBe(0)
     const commit = spawnSync('git', ['-c', 'user.name=ACC Test', '-c', 'user.email=acc@example.invalid',
