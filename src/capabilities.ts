@@ -25,6 +25,7 @@ export const CAPABILITIES: readonly Capability[] = [
   { id: 'eslint-verify', label: 'ESLint lint', group: 'autoCorrect', language: 'typescript', executable: 'eslint', description: 'Verify TypeScript lint' },
   { id: 'typescript-check', label: 'TypeScript compiler', group: 'autoCorrect', language: 'typescript', executable: 'tsc', description: 'Check TypeScript types' },
   { id: 'typescript-lsp', label: 'TypeScript LSP', group: 'languageServer', language: 'typescript', executable: 'typescript-language-server', description: 'TypeScript code navigation' },
+  { id: 'shellcheck', label: 'ShellCheck for staged shell scripts', group: 'hygiene', executable: 'shellcheck', description: 'Validate staged shell scripts when explicitly enabled' },
   { id: 'git-diff', label: 'Git whitespace and conflict checks', group: 'hygiene', executable: 'git', description: 'Check staged diff' },
   { id: 'gitleaks', label: 'Gitleaks', group: 'hygiene', executable: 'gitleaks', description: 'Scan staged changes for secrets' },
   { id: 'large-files', label: 'Large-file detection', group: 'hygiene', executable: 'git', description: 'Reject staged oversized blobs' },
