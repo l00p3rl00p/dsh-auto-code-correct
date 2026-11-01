@@ -11,7 +11,7 @@
 
 import { dirname, isAbsolute, relative, resolve, parse } from 'node:path'
 import { existsSync } from 'node:fs'
-import { CAPABILITIES, languageForExtension } from './capabilities.js'
+import { capabilityEnabled, languageForExtension } from './capabilities.js'
 import type { Language } from './capabilities.js'
 import * as nativeLspStdio from '@deepseek-ai/dsh-lsp-stdio'
 import type { Context } from '@deepseek-ai/cordis'
@@ -233,9 +233,7 @@ function validateCheckers(checkers: readonly CheckerConfig[]): void {
 export function apply(ctx: Context, config: Config): void {
   validateCheckers([...config.fixers, ...config.checkers])
   const effectiveEnabled = (extension: string, name: string): boolean => {
-    const lang = languageForExtension(extension)
-    if (!lang || !config.languages[lang]) return false
-    return config.capabilities[name] !== false
+    return capabilityEnabled(languageForExtension(extension), name, config.languages, config.capabilities)
   }
   if (!Number.isInteger(config.maxDiagnosticChars) || config.maxDiagnosticChars < 1) {
     throw new Error(`auto-code-correct: invalid maxDiagnosticChars ${config.maxDiagnosticChars} — must be an integer >= 1`)
