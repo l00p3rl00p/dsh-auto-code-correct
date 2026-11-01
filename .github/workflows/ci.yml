@@ -16,6 +16,12 @@ jobs:
           node-version: '24'
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
+      - name: ESLint (TypeScript)
+        run: pnpm run lint
+      - name: Prettier (TypeScript)
+        run: pnpm run formatcheck
+      - name: TypeScript language server available
+        run: pnpm exec typescript-language-server --version
       - name: Typecheck
         run: pnpm run typecheck
       - name: Unit tests
