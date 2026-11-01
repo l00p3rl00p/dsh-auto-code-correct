@@ -11,6 +11,8 @@
 
 import { dirname, isAbsolute, relative, resolve, parse } from 'node:path'
 import { existsSync } from 'node:fs'
+import { CAPABILITIES, languageForExtension } from './capabilities.js'
+import type { Language } from './capabilities.js'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -64,6 +66,10 @@ export interface CheckerConfig {
  * forbid.
  */
 export interface Config {
+  /** Primary language switches: disabled languages are never evaluated. */
+  languages: Record<Language, boolean>
+  /** Individual named capabilities; false disables one fixer or checker. */
+  capabilities: Record<string, boolean>
   /** Tool names whose successful results are inspected for an edited file. */
   tools: string[]
   /** Checkers, consulted in order; every checker claiming the extension runs. */
@@ -87,6 +93,8 @@ const CheckerSchema: z<CheckerConfig> = z.object({
 })
 
 export const Config: z<Config> = z.object({
+  languages: z.object({ python: z.boolean().default(true), rust: z.boolean().default(false), typescript: z.boolean().default(false) }).default({ python: true, rust: false, typescript: false }),
+  capabilities: z.dict(z.boolean()).default({}),
   tools: z.array(z.string()).default(['write', 'edit', 'str_replace_editor']),
   checkers: z.array(CheckerSchema).default([]),
   fixers: z.array(CheckerSchema).default([]),
@@ -217,6 +225,15 @@ function validateCheckers(checkers: readonly CheckerConfig[]): void {
  */
 export function apply(ctx: Context, config: Config): void {
   validateCheckers([...config.fixers, ...config.checkers])
+  const effectiveEnabled = (extension: string, name: string): boolean => {
+    const lang = languageForExtension(extension)
+    if (!lang || !config.languages[lang]) return false
+    return config.capabilities[name] !== false
+  }
+  const configuredNames = new Set([...config.fixers, ...config.checkers].map(item => item.name))
+  for (const capability of CAPABILITIES) {
+    if (capability.group === 'autoCorrect' && configuredNames.has(capability.id) && config.capabilities[capability.id] === false) continue
+  }
   if (!Number.isInteger(config.maxDiagnosticChars) || config.maxDiagnosticChars < 1) {
     throw new Error(`auto-code-correct: invalid maxDiagnosticChars ${config.maxDiagnosticChars} — must be an integer >= 1`)
   }
@@ -277,7 +294,8 @@ export function apply(ctx: Context, config: Config): void {
   async function runChecker(
     checker: CheckerConfig, filePath: string, signal: AbortSignal,
   ): Promise<Finding | undefined> {
-    if (brokenCheckers.has(checker.name)) return undefined
+    // Re-resolve on the next edit if a dependency was installed after the previous attempt.
+    if (brokenCheckers.has(checker.name)) brokenCheckers.delete(checker.name)
     const subprocess: SubprocessRuntime = ctx.subprocess
     let cwd: string
     try {
@@ -337,8 +355,10 @@ export function apply(ctx: Context, config: Config): void {
    */
   async function diagnose(filePath: string, signal: AbortSignal): Promise<UserMessage | undefined> {
     const absolute = isAbsolute(filePath) ? filePath : resolve(filePath)
-    const fixers = fixersByExtension.get(extensionOf(absolute)) ?? []
-    const checkers = byExtension.get(extensionOf(absolute)) ?? []
+    const ext = extensionOf(absolute)
+    if (!languageForExtension(ext) || !config.languages[languageForExtension(ext)!]) return undefined
+    const fixers = (fixersByExtension.get(ext) ?? []).filter(item => effectiveEnabled(ext, item.name))
+    const checkers = (byExtension.get(ext) ?? []).filter(item => effectiveEnabled(ext, item.name))
     if (!fixers.length && !checkers.length) return undefined
     const fixFindings: Finding[] = []
     for (const fixer of fixers) {
