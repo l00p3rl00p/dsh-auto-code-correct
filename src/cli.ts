@@ -5,12 +5,12 @@
  * Interactive DSH settings should invoke these actions after user approval.
  */
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { CAPABILITIES } from './capabilities.js'
 
-type InstallRecord = { manager: 'npm' | 'uv' | 'rustup'; packageName: string; prefix?: string }
+type InstallRecord = { manager: 'npm' | 'uv' | 'rustup' | 'go'; packageName: string; prefix?: string }
 type Ledger = Record<string, InstallRecord>
 const home = resolve(process.env.ACC_HOME ?? join(homedir(), '.config', 'dsh-auto-code-correct'))
 const ledgerPath = join(home, 'owned-tools.json')
@@ -52,6 +52,8 @@ const packages: Readonly<Record<string, { manager: InstallRecord['manager']; pac
   tsc: { manager: 'npm', packageName: 'typescript' },
   'typescript-language-server': { manager: 'npm', packageName: 'typescript-language-server' },
   'license-checker': { manager: 'npm', packageName: 'license-checker' },
+  'gitleaks': { manager: 'go', packageName: 'github.com/gitleaks/gitleaks/v8@latest' },
+  'cargo-clippy': { manager: 'rustup', packageName: 'clippy' },
 }
 function install(id: string, prefix: string): void {
   const executable = toolId(id)
@@ -65,7 +67,8 @@ function install(id: string, prefix: string): void {
   console.log(`Installing ${pkg.packageName} using ${pkg.manager}; target ${prefix}`)
   if (pkg.manager === 'npm') exec('npm', ['install', '--prefix', prefix, '--save', pkg.packageName])
   else if (pkg.manager === 'uv') exec('uv', ['tool', 'install', pkg.packageName], { env: { ...process.env, UV_TOOL_DIR: join(prefix, 'uv-tools'), UV_TOOL_BIN_DIR: join(prefix, 'bin') } })
-  else exec('rustup', ['component', 'add', pkg.packageName])
+  else if (pkg.manager === 'rustup') exec('rustup', ['component', 'add', pkg.packageName])
+  else { mkdirSync(join(prefix, 'bin'), { recursive: true }); exec('go', ['install', pkg.packageName], { env: { ...process.env, GOBIN: join(prefix, 'bin') } }) }
   const installed = locate(executable, prefix)
   if (!installed) throw new Error(`Installation finished but ${executable} is not discoverable; configure its absolute path before enabling the feature`)
   const ledger = readLedger()
@@ -83,7 +86,11 @@ function uninstall(id: string): void {
   }
   if (record.manager === 'npm') exec('npm', ['uninstall', '--prefix', record.prefix ?? home, record.packageName])
   else if (record.manager === 'uv') exec('uv', ['tool', 'uninstall', record.packageName], { env: { ...process.env, UV_TOOL_DIR: join(record.prefix ?? home, 'uv-tools'), UV_TOOL_BIN_DIR: join(record.prefix ?? home, 'bin') } })
-  else exec('rustup', ['component', 'remove', record.packageName])
+  else if (record.manager === 'rustup') exec('rustup', ['component', 'remove', record.packageName])
+  else {
+    const path = resolve(record.prefix ?? home, 'bin', executable)
+    if (existsSync(path)) unlinkSync(path)
+  }
   delete ledger[executable]
   writeLedger(ledger)
   console.log(`REMOVED ACC-owned ${executable}`)
