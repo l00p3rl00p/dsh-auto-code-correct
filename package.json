@@ -49,7 +49,9 @@
         "@deepseek-ai/dsh-client-ui-slots",
         "@deepseek-ai/dsh-client-ui-settings",
         "@deepseek-ai/dsh-client-ui-settings-plugins",
-        "@deepseek-ai/dsh-client-ui-renderer"
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-ui-session"
       ],
       "platform": "web"
     }
@@ -62,7 +64,8 @@
     "@deepseek-ai/dsh-tools": ">=0.2.1-0 <0.3.0",
     "@deepseek-ai/dsh-lsp-stdio": ">=0.2.1-0 <0.3.0",
     "react": "^18.2.0",
-    "@deepseek-ai/dsh-client-ui-settings": ">=0.2.1-0 <0.3.0"
+    "@deepseek-ai/dsh-client-ui-settings": ">=0.2.1-0 <0.3.0",
+    "@deepseek-ai/dsh-commands": ">=0.2.1-0 <0.3.0"
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "^3.18.5"
@@ -95,7 +98,10 @@
     "@deepseek-ai/dsh-client-ui-settings": "0.2.2-alpha.2",
     "@deepseek-ai/dsh-client-ui-settings-plugins": "0.2.2-alpha.2",
     "@deepseek-ai/schemastery": "^3.18.5",
-    "@deepseek-ai/dsh-client-ui-renderer": "0.2.2-alpha.2"
+    "@deepseek-ai/dsh-client-ui-renderer": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-commands": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-api-remotes": "0.2.2-alpha.2",
+    "@deepseek-ai/dsh-client-ui-session": "0.2.2-alpha.2"
   },
   "scripts": {
     "build": "tsdown",
