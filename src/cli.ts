@@ -135,10 +135,22 @@ exec ${quoted(process.execPath)} ${quoted(resolve(process.argv[1] ?? ''))} hygie
   writeFileSync(path, script, { mode: 0o755, flag: 'wx' })
   console.log(`INSTALLED ACC pre-commit hook: ${path}`)
 }
+/** Check indexed script bytes, not potentially different unstaged working-tree content. */
+function stagedShellcheck(cwd: string): void {
+  const paths = git(['diff', '--cached', '--name-only', '-z', '--diff-filter=ACMRT'], cwd).split('\\0').filter(path => path.endsWith('.sh'))
+  for (const path of paths) {
+    const staged = spawnSync('git', ['show', ':' + path], { cwd, encoding: 'utf8' })
+    if (staged.status !== 0) throw new Error(`Could not read staged shell script ${path}: ${staged.stderr}`)
+    const checked = spawnSync('shellcheck', ['--filename', path, '-'], { cwd, input: staged.stdout, encoding: 'utf8' })
+    if (checked.error) throw checked.error
+    if (checked.status !== 0) throw new Error(`ShellCheck failed for staged ${path}: ${checked.stdout} ${checked.stderr}`)
+  }
+}
 function hygiene(ids: string[], cwd: string): void {
   const selected = new Set(ids.length ? ids : readHygieneSelection(cwd))
   for (const id of selected) {
-    if (id === 'git-diff') exec('git', ['diff', '--cached', '--check'], { cwd })
+    if (id === 'shellcheck') stagedShellcheck(cwd)
+    else if (id === 'git-diff') exec('git', ['diff', '--cached', '--check'], { cwd })
     else if (id === 'gitleaks') exec('gitleaks', ['git', '--pre-commit', '--staged', '--redact'], { cwd })
     else if (id === 'large-files') stagedLargeFiles(cwd)
     else if (id === 'dependency-audit') exec('npm', ['audit', '--audit-level=high'], { cwd })
