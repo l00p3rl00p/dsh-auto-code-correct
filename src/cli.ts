@@ -1,0 +1,138 @@
+#!/usr/bin/env node
+/**
+ * ACC tool manager. Reuses existing executables before installing anything,
+ * tracks ACC-owned installations, and never removes unowned/shared software.
+ * Interactive DSH settings should invoke these actions after user approval.
+ */
+import { spawnSync } from 'node:child_process'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
+import { homedir } from 'node:os'
+import { CAPABILITIES } from './capabilities.js'
+
+type InstallRecord = { manager: 'npm' | 'uv' | 'rustup'; packageName: string; prefix?: string }
+type Ledger = Record<string, InstallRecord>
+const home = resolve(process.env.ACC_HOME ?? join(homedir(), '.config', 'dsh-auto-code-correct'))
+const ledgerPath = join(home, 'owned-tools.json')
+const readLedger = (): Ledger => existsSync(ledgerPath) ? JSON.parse(readFileSync(ledgerPath, 'utf8')) as Ledger : {}
+const writeLedger = (ledger: Ledger): void => {
+  mkdirSync(dirname(ledgerPath), { recursive: true })
+  writeFileSync(ledgerPath, JSON.stringify(ledger, null, 2) + '\n', { mode: 0o600 })
+}
+function exec(command: string, args: string[], options: { cwd?: string; quiet?: boolean } = {}): void {
+  const run = spawnSync(command, args, { encoding: 'utf8', cwd: options.cwd, stdio: options.quiet ? 'pipe' : 'inherit' })
+  if (run.error) throw run.error
+  if (run.status !== 0) throw new Error(`${command} ${args.join(' ')} failed (exit ${run.status ?? 'unknown'})`)
+}
+function locate(executable: string, prefix?: string): string | undefined {
+  const suffix = process.platform === 'win32' ? '.cmd' : ''
+  if (prefix) {
+    const candidate = resolve(prefix, 'node_modules', '.bin', executable + suffix)
+    if (existsSync(candidate)) return candidate
+    const bin = resolve(prefix, 'bin', executable)
+    if (existsSync(bin)) return bin
+  }
+  const finder = process.platform === 'win32' ? 'where' : 'which'
+  const run = spawnSync(finder, [executable], { encoding: 'utf8' })
+  return run.status === 0 ? run.stdout.split(/\r?\n/)[0]?.trim() || undefined : undefined
+}
+function toolId(id: string): string {
+  const cap = CAPABILITIES.find(item => item.id === id)
+  if (!cap) throw new Error(`Unknown capability ${id}; use 'list'`)
+  return cap.executable
+}
+const packages: Readonly<Record<string, { manager: InstallRecord['manager']; packageName: string; executable?: string }>> = {
+  ruff: { manager: 'uv', packageName: 'ruff' },
+  ty: { manager: 'uv', packageName: 'ty' },
+  'basedpyright-langserver': { manager: 'npm', packageName: 'basedpyright' },
+  rustfmt: { manager: 'rustup', packageName: 'rustfmt' },
+  'rust-analyzer': { manager: 'rustup', packageName: 'rust-analyzer' },
+  eslint: { manager: 'npm', packageName: 'eslint' },
+  prettier: { manager: 'npm', packageName: 'prettier' },
+  tsc: { manager: 'npm', packageName: 'typescript' },
+  'typescript-language-server': { manager: 'npm', packageName: 'typescript-language-server' },
+  'license-checker': { manager: 'npm', packageName: 'license-checker' },
+}
+function install(id: string, prefix: string): void {
+  const executable = toolId(id)
+  const current = locate(executable, prefix)
+  if (current) {
+    console.log(`REUSED ${id}: ${current} (no installation performed)`)
+    return
+  }
+  const pkg = packages[executable]
+  if (!pkg) throw new Error(`No native vetted installer for ${executable}. Supply its location via the DSH profile or install using its official package manager.`)
+  console.log(`Installing ${pkg.packageName} using ${pkg.manager}; target ${prefix}`)
+  if (pkg.manager === 'npm') exec('npm', ['install', '--prefix', prefix, '--no-save', pkg.packageName])
+  else if (pkg.manager === 'uv') exec('uv', ['tool', 'install', pkg.packageName, '--tool-dir', join(prefix, 'uv-tools'), '--tool-bin-dir', join(prefix, 'bin')])
+  else exec('rustup', ['component', 'add', pkg.packageName])
+  const installed = locate(executable, prefix)
+  if (!installed) throw new Error(`Installation finished but ${executable} is not discoverable; configure its absolute path before enabling the feature`)
+  const ledger = readLedger()
+  ledger[executable] = { manager: pkg.manager, packageName: pkg.packageName, prefix }
+  writeLedger(ledger)
+  console.log(`INSTALLED ${executable}: ${installed}`)
+}
+function uninstall(id: string): void {
+  const executable = toolId(id)
+  const ledger = readLedger()
+  const record = ledger[executable]
+  if (!record) {
+    console.log(`RETAINED ${executable}: not installed by ACC`)
+    return
+  }
+  if (record.manager === 'npm') exec('npm', ['uninstall', '--prefix', record.prefix ?? home, record.packageName])
+  else if (record.manager === 'uv') exec('uv', ['tool', 'uninstall', record.packageName, '--tool-dir', join(record.prefix ?? home, 'uv-tools'), '--tool-bin-dir', join(record.prefix ?? home, 'bin')])
+  else exec('rustup', ['component', 'remove', record.packageName])
+  delete ledger[executable]
+  writeLedger(ledger)
+  console.log(`REMOVED ACC-owned ${executable}`)
+}
+function git(args: string[], cwd: string): string {
+  const out = spawnSync('git', args, { cwd, encoding: 'utf8' })
+  if (out.status !== 0) throw new Error(out.stderr || `git ${args.join(' ')} failed`)
+  return out.stdout
+}
+function stagedLargeFiles(cwd: string, sizeLimit = 10 * 1024 * 1024): void {
+  const entries = git(['diff', '--cached', '--name-only', '-z', '--diff-filter=ACMRT'], cwd).split('\0').filter(Boolean)
+  for (const path of entries) {
+    const tree = git(['ls-files', '-s', '--', path], cwd).trim()
+    const hash = tree.match(/^[0-7]{6} ([0-9a-f]{40,64}) /)?.[1]
+    if (!hash) continue
+    const size = Number(git(['cat-file', '-s', hash], cwd).trim())
+    if (size > sizeLimit) throw new Error(`Oversized staged blob: ${path} (${size} bytes > ${sizeLimit})`)
+  }
+}
+function hygiene(ids: string[], cwd: string): void {
+  const selected = new Set(ids.length ? ids : ['git-diff', 'gitleaks', 'large-files'])
+  for (const id of selected) {
+    if (id === 'git-diff') exec('git', ['diff', '--cached', '--check'], { cwd })
+    else if (id === 'gitleaks') exec('gitleaks', ['git', '--pre-commit', '--staged', '--redact'], { cwd })
+    else if (id === 'large-files') stagedLargeFiles(cwd)
+    else if (id === 'dependency-audit') exec('npm', ['audit', '--audit-level=high'], { cwd })
+    else if (id === 'license-audit') exec('license-checker', ['--summary'], { cwd })
+    else if (id === 'history-secrets') exec('gitleaks', ['git', '--redact'], { cwd })
+    else throw new Error(`Unknown hygiene check: ${id}`)
+    console.log(`PASS ${id}`)
+  }
+}
+function main(): void {
+  const [action, id, ...rest] = process.argv.slice(2)
+  const prefixArg = rest.indexOf('--prefix')
+  const prefix = resolve(prefixArg >= 0 ? rest[prefixArg + 1] ?? home : home)
+  if (action === 'list') {
+    for (const item of CAPABILITIES) {
+      console.log(`${item.language ?? 'repository'} / ${item.group} / ${item.id}: ${locate(item.executable, prefix) ?? 'missing'}`)
+    }
+  } else if (action === 'install' && id) install(id, prefix)
+  else if (action === 'uninstall' && id) uninstall(id)
+  else if (action === 'hygiene') hygiene([id, ...rest].filter(Boolean).filter(x => x !== '--prefix'), process.cwd())
+  else {
+    console.log('Usage: acc-tools list | install <capability> [--prefix DIR] | uninstall <capability> | hygiene [check...]')
+    process.exitCode = 2
+  }
+}
+try { main() } catch (error) {
+  console.error(`ACC: ${error instanceof Error ? error.message : String(error)}`)
+  process.exitCode = 1
+}
