@@ -257,7 +257,7 @@ export function apply(ctx: Context, config: Config): void {
   ctx.inject(['fs', 'lsp', 'subprocess'], async scoped => {
     const entries: Record<string, { command: string; args: string[]; extensionToLanguage: Record<string, string> }> = {}
     const requested = [
-      { language: 'python' as const, id: 'basedpyright', command: 'basedpyright-langserver', args: ['--stdio'], mapping: { '.py': 'python' } },
+      { language: 'python' as const, id: 'ty-lsp', command: 'ty', args: ['server'], mapping: { '.py': 'python' } },
       { language: 'rust' as const, id: 'rust-analyzer', command: 'rust-analyzer', args: [], mapping: { '.rs': 'rust' } },
       { language: 'typescript' as const, id: 'typescript-lsp', command: 'typescript-language-server', args: ['--stdio'], mapping: { '.ts': 'typescript', '.tsx': 'typescriptreact' } },
     ]
