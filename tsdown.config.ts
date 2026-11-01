@@ -15,7 +15,7 @@ export default defineConfig([
     platform: 'node',
     dts: true,
     clean: true,
-    deps: { neverBundle: [/^@deepseek-ai\\//] },
+    deps: { neverBundle: [/^@deepseek-ai\//] },
   },
   {
     entry: { client: 'src/client/index.tsx' },
@@ -30,7 +30,7 @@ export default defineConfig([
     },
     outputOptions: {
       entryFileNames: 'client.js',
-      banner: 'window.__ModuleLoader__.load({ id: "dsh-auto-code-correct", factory: (require) => {\\nvar module = { exports: {} };\\nvar exports = module.exports;',
+      banner: 'window.__ModuleLoader__.load({ id: "dsh-auto-code-correct", factory: (require) => {\nvar module = { exports: {} };\nvar exports = module.exports;',
       footer: 'return module.exports; } });',
     },
   },
