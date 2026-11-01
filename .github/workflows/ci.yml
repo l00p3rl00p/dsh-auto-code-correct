@@ -8,6 +8,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Read authoritative Docker code-and-quality installer
+        uses: actions/checkout@v4
+        with:
+          repository: l00p3rl00p/qdocker-compose
+          path: .acc-docker-source
+          persist-credentials: false
       - uses: pnpm/action-setup@v4
         with:
           version: 10
@@ -28,7 +34,9 @@ jobs:
         run: pnpm exec typescript-language-server --version
       - name: Typecheck
         run: pnpm run typecheck
-      - name: Unit tests
+      - name: Unit tests and cross-repo tool inventory
+        env:
+          ACC_DOCKER_INSTALLER: .acc-docker-source/stacks/llm-runtime/install-code-and-quality.sh
         run: pnpm test
       - name: Build
         run: pnpm run build
