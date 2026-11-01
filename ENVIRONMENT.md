@@ -74,3 +74,20 @@ export ACC_TOOL_PATHS=/path/to/existing/tools/bin
 ACC must run within the existing DSH plugin lifecycle; it should not create a standalone Harness, overwrite the QDev Code-and-Quality tool volume, or add Docker services merely to make a language tool available. Use the existing executable path or `ACC_TOOL_PATHS`; record profile-specific overrides through DSH's native config mechanism. Ensure any path used in Docker resolves **inside** the Harness container, not just on the Mac host.
 
 For a normal local checkout, discovery uses that host's PATH/project executables. For QDev, the code-quality volume is read-only and installed by the QDev repository; build artifacts and ACC's own package belong outside that mount.
+
+
+## Three settings groups — exact lookup and persistence boundaries
+
+| Group | Exact implementation | Native setting/trigger | Runtime boundary |
+|---|---|---|---|
+| Auto-Correct | `src/index.ts`, `cordis.patch.yml`, `src/capabilities.ts` | `config.languages`, `config.capabilities`, `config.fixers`, `config.checkers`, `config.tools` on `tools/post-execute` | Only enabled matching edited-file pipeline executes |
+| Language Servers | `src/index.ts`, `src/client/index.tsx` | `config.languageServers`, `config.languages`, `config.capabilities`, `config.executables`; native `dsh-lsp-stdio` and `dsh-lsp-actions` | Disabled language or server must not be started |
+| Code Hygiene | `src/cli.ts`, `src/client/index.tsx` | UI writes `config.capabilities` via DSH ConfigForms; separate Git hook invokes `acc-tools hygiene` and reads `<project-root>/.acc-hygiene.json` | **Current gap:** UI Code Hygiene switches are not yet consumed by the Git hook. Hook opt-in via `acc-tools hooks install`. |
+
+**Persistent native DSH settings:** `src/client/index.tsx` calls `configForms.get('auto-code-correct')` and `scope.mutate` for the active Cordis entry. `src/commands.ts` uses `configEditor.edit` for `/acc link`; the authoritative settings are the active DSH profile, not a second project file. Persistence after restart still requires a real DSH test.
+
+**Separate local artifacts:** `ACC_HOME` (default `~/.config/dsh-auto-code-correct`) owns `owned-tools.json` for tools installed by ACC; `<project-root>/.acc-hygiene.json` is the **current** Git CLI's optional selection file. Neither substitutes for native profile configuration. Reconciliation is needed to satisfy the one-configuration design intent.
+
+**Git hook exact paths and flags:** `src/cli.ts` uses `git rev-parse --absolute-git-dir` and writes `<returned-git-dir>/hooks/pre-commit`; refuses existing hook or configured `git config --get core.hooksPath`. Its default commands come from `src/cli.ts`, **not** `hooks.json` or `check.sh` (both deprecated experiments). Exact command flags are listed in [RUNBOOK.md](RUNBOOK.md#event-b--git-pre-commit-checks-opt-in-installation).
+
+**Configured language defaults and command lines:** `cordis.patch.yml` has `config.languages.python: true`, `rust: false`, `typescript: false`; it declares all three language pipelines but disabled languages do not execute. For the complete exact `argv` values, consult [ARCHITECTURE.md](ARCHITECTURE.md#language-specific-post-edit-pipeline--exact-intended-sequence) and `cordis.patch.yml`.
