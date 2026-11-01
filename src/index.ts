@@ -13,6 +13,7 @@ import { dirname, isAbsolute, relative, resolve, parse } from 'node:path'
 import { existsSync } from 'node:fs'
 import { capabilityEnabled, languageForExtension } from './capabilities.js'
 import { registerAccCommands } from './commands.js'
+import { DEFAULT_HYGIENE, syncGitHygiene } from './hygiene-hook.js'
 import { configuredToolDirectories, findTool } from './discovery.js'
 import type { Language } from './capabilities.js'
 import * as nativeLspStdio from '@deepseek-ai/dsh-lsp-stdio'
@@ -74,6 +75,8 @@ export interface Config {
   languages: Record<Language, boolean>
   /** Individual named capabilities; false disables one fixer or checker. */
   capabilities: Record<string, boolean>
+  /** Native Git pre-commit hygiene runs automatically unless explicitly disabled. */
+  hygieneEnabled: boolean
   /** Language-server capability switches; gated by the corresponding language master. */
   languageServers: Record<Language, boolean>
   /** Optional absolute or PATH-resolvable command overrides by executable name. */
@@ -103,6 +106,7 @@ const CheckerSchema: z<CheckerConfig> = z.object({
 export const Config: z<Config> = z.object({
   languages: z.object({ python: z.boolean().default(true), rust: z.boolean().default(false), typescript: z.boolean().default(false) }).default({ python: true, rust: false, typescript: false }),
   capabilities: z.dict(z.boolean()).default({}),
+  hygieneEnabled: z.boolean().default(true),
   languageServers: z.object({ python: z.boolean().default(true), rust: z.boolean().default(true), typescript: z.boolean().default(true) }).default({ python: true, rust: true, typescript: true }),
   executables: z.dict(z.string()).default({}),
   tools: z.array(z.string()).default(['write', 'edit', 'str_replace_editor']),
@@ -303,6 +307,16 @@ export function apply(ctx: Context, config: Config): void {
     if (Object.keys(entries).length > 0) scoped.plugin(lspActions, { servers: entries, editor: { enabled: false } })
   })
 
+  const hygienePolicy = () => ({
+    enabled: config.hygieneEnabled,
+    checks: [...DEFAULT_HYGIENE, 'large-files', 'dependency-audit', 'license-audit', 'history-secrets']
+      .filter(id => config.capabilities[id] === true || (config.capabilities[id] !== false && DEFAULT_HYGIENE.some(value => value === id))),
+  })
+  // Install the repository-local Git pre-commit integration on plugin activation
+  // when the Harness starts inside a repository, then for each edited repository.
+  try { syncGitHygiene(process.cwd(), hygienePolicy()) }
+  catch (error) { console.warn('[auto-code-correct] Git hygiene setup: ' + errorMessage(error)) }
+
   const watchedTools = new Set(config.tools)
   // Extension → checkers, precomputed once so a hot post-execute path does no
   // per-call scanning of the checker list.
@@ -456,11 +470,20 @@ export function apply(ctx: Context, config: Config): void {
     const filePath = editedPath(exec, result)
     if (filePath === undefined) return downstream
 
+    let hookIssue: UserMessage | undefined
+    try {
+      syncGitHygiene(isAbsolute(filePath) ? dirname(filePath) : dirname(resolve(filePath)), hygienePolicy())
+    } catch (error) {
+      hookIssue = createUserMessage({
+        content: [{ type: 'text', text: 'ACC Git pre-commit setup failed: ' + errorMessage(error) }],
+        source: { ...PLUGIN_SOURCE, form: 'notice', summary: 'ACC Git hygiene setup failure' },
+      })
+    }
     const diagnostics = await diagnose(filePath, exec.signal)
-    if (!diagnostics) return downstream
+    if (!diagnostics && !hookIssue) return downstream
     return {
       ...downstream,
-      additionalContexts: [...downstream.additionalContexts ?? [], diagnostics],
+      additionalContexts: [...downstream.additionalContexts ?? [], ...hookIssue ? [hookIssue] : [], ...diagnostics ? [diagnostics] : []],
     }
   })
 }
