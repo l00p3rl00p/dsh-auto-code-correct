@@ -8,13 +8,21 @@
           - name: ruff-fix
             extensions: ['.py']
             argv: ['ruff', 'check', '--fix', '{file}']
-            cleanExitCodes: [0]
           - name: ruff-format
             extensions: ['.py']
             argv: ['ruff', 'format', '{file}']
           - name: rustfmt
             extensions: ['.rs']
             argv: ['rustfmt', '--edition', '2021', '{file}']
+          - name: clippy-fix
+            extensions: ['.rs']
+            argv: ['cargo', 'clippy', '--fix', '--allow-dirty', '--allow-staged', '--', '-D', 'warnings']
+          - name: eslint-fix
+            extensions: ['.ts', '.tsx']
+            argv: ['eslint', '--fix', '{file}']
+          - name: prettier
+            extensions: ['.ts', '.tsx']
+            argv: ['prettier', '--write', '{file}']
         checkers:
           - name: ruff-verify
             extensions: ['.py']
@@ -22,6 +30,18 @@
           - name: ty
             extensions: ['.py']
             argv: ['ty', 'check', '{file}']
+          - name: cargo-check
+            extensions: ['.rs']
+            argv: ['cargo', 'check']
+          - name: clippy-verify
+            extensions: ['.rs']
+            argv: ['cargo', 'clippy', '--', '-D', 'warnings']
+          - name: eslint-verify
+            extensions: ['.ts', '.tsx']
+            argv: ['eslint', '{file}']
+          - name: typescript-check
+            extensions: ['.ts', '.tsx']
+            argv: ['tsc', '--noEmit']
           - name: shellcheck
             extensions: ['.sh']
             argv: ['shellcheck', '{file}']
