@@ -9,7 +9,8 @@
  * @module dsh-auto-code-correct
  */
 
-import { dirname, isAbsolute, relative, resolve } from 'node:path'
+import { dirname, isAbsolute, relative, resolve, parse } from 'node:path'
+import { existsSync } from 'node:fs'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -249,6 +250,23 @@ export function apply(ctx: Context, config: Config): void {
   /** Checkers whose executable could not be resolved; reported once, then skipped. */
   const brokenCheckers = new Set<string>()
 
+  /** Project-scoped tools must execute from the nearest actual project root. */
+  function workingDirectory(filePath: string, checker: CheckerConfig): string {
+    const extension = extensionOf(filePath)
+    const markers = extension === '.rs' ? ['Cargo.toml']
+      : extension === '.ts' || extension === '.tsx' ? ['tsconfig.json', 'package.json']
+      : []
+    if (markers.length === 0) return resolve(checker.cwd)
+    let dir = dirname(filePath)
+    while (true) {
+      if (markers.some(marker => existsSync(resolve(dir, marker)))) return dir
+      const parent = dirname(dir)
+      if (parent === dir || dir === parse(dir).root) break
+      dir = parent
+    }
+    throw new Error(`no project root found for ${filePath} (expected ${markers.join(' or ')})`)
+  }
+
   /**
    * Run one checker over one file and return its findings.
    * @param checker - the checker to run.
@@ -261,7 +279,12 @@ export function apply(ctx: Context, config: Config): void {
   ): Promise<Finding | undefined> {
     if (brokenCheckers.has(checker.name)) return undefined
     const subprocess: SubprocessRuntime = ctx.subprocess
-    const cwd = resolve(checker.cwd)
+    let cwd: string
+    try {
+      cwd = workingDirectory(filePath, checker)
+    } catch (error) {
+      return { checker: checker.name, output: errorMessage(error) }
+    }
     const argv = substitute(checker.argv, filePath, cwd)
 
     let executable: string
@@ -296,8 +319,7 @@ export function apply(ctx: Context, config: Config): void {
         .map(stream => handle.collected[stream]?.readFrom(0).text ?? '')
         .join('')
         .trim()
-      if (output.length === 0) return undefined
-      return { checker: checker.name, output }
+      return { checker: checker.name, output: output || `exited with code ${outcome.exitCode ?? 'unknown'} without diagnostic output` }
     } catch (error) {
       // `done` rejects only for spawn-level failures. The call itself
       // succeeded, so this cannot fail the edit — it becomes a finding.
