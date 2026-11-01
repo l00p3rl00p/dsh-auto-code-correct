@@ -13,6 +13,7 @@ import { dirname, isAbsolute, relative, resolve, parse } from 'node:path'
 import { existsSync } from 'node:fs'
 import { CAPABILITIES, languageForExtension } from './capabilities.js'
 import type { Language } from './capabilities.js'
+import * as nativeLspStdio from '@deepseek-ai/dsh-lsp-stdio'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -70,6 +71,10 @@ export interface Config {
   languages: Record<Language, boolean>
   /** Individual named capabilities; false disables one fixer or checker. */
   capabilities: Record<string, boolean>
+  /** Language-server capability switches; gated by the corresponding language master. */
+  languageServers: Record<Language, boolean>
+  /** Optional absolute or PATH-resolvable command overrides by executable name. */
+  executables: Record<string, string>
   /** Tool names whose successful results are inspected for an edited file. */
   tools: string[]
   /** Checkers, consulted in order; every checker claiming the extension runs. */
@@ -95,6 +100,8 @@ const CheckerSchema: z<CheckerConfig> = z.object({
 export const Config: z<Config> = z.object({
   languages: z.object({ python: z.boolean().default(true), rust: z.boolean().default(false), typescript: z.boolean().default(false) }).default({ python: true, rust: false, typescript: false }),
   capabilities: z.dict(z.boolean()).default({}),
+  languageServers: z.object({ python: z.boolean().default(true), rust: z.boolean().default(true), typescript: z.boolean().default(true) }).default({ python: true, rust: true, typescript: true }),
+  executables: z.dict(z.string()).default({}),
   tools: z.array(z.string()).default(['write', 'edit', 'str_replace_editor']),
   checkers: z.array(CheckerSchema).default([]),
   fixers: z.array(CheckerSchema).default([]),
@@ -230,10 +237,6 @@ export function apply(ctx: Context, config: Config): void {
     if (!lang || !config.languages[lang]) return false
     return config.capabilities[name] !== false
   }
-  const configuredNames = new Set([...config.fixers, ...config.checkers].map(item => item.name))
-  for (const capability of CAPABILITIES) {
-    if (capability.group === 'autoCorrect' && configuredNames.has(capability.id) && config.capabilities[capability.id] === false) continue
-  }
   if (!Number.isInteger(config.maxDiagnosticChars) || config.maxDiagnosticChars < 1) {
     throw new Error(`auto-code-correct: invalid maxDiagnosticChars ${config.maxDiagnosticChars} — must be an integer >= 1`)
   }
@@ -243,6 +246,28 @@ export function apply(ctx: Context, config: Config): void {
     // deployment's toolchain is, and silence would look like a broken plugin.
     console.warn('[auto-code-correct] no checkers configured; this plugin will not run anything. See its README for examples.')
   }
+
+  // Use DSH's native LSP stdio provider, not a parallel LSP implementation.
+  // If this deployment has no LSP service, the nested injection stays dormant.
+  ctx.inject(['fs', 'lsp', 'subprocess'], async scoped => {
+    const entries: Record<string, { command: string; args: string[]; extensionToLanguage: Record<string, string> }> = {}
+    const requested = [
+      { language: 'python' as const, id: 'basedpyright', command: 'basedpyright-langserver', args: ['--stdio'], mapping: { '.py': 'python' } },
+      { language: 'rust' as const, id: 'rust-analyzer', command: 'rust-analyzer', args: [], mapping: { '.rs': 'rust' } },
+      { language: 'typescript' as const, id: 'typescript-lsp', command: 'typescript-language-server', args: ['--stdio'], mapping: { '.ts': 'typescript', '.tsx': 'typescriptreact' } },
+    ]
+    for (const item of requested) {
+      if (!config.languages[item.language] || !config.languageServers[item.language] || config.capabilities[item.id] === false) continue
+      const command = config.executables[item.command] ?? item.command
+      try {
+        await scoped.subprocess.resolveExecutable(command)
+        entries[item.language] = { command, args: item.args, extensionToLanguage: item.mapping }
+      } catch (error) {
+        console.warn(`[auto-code-correct] ${item.id} unavailable; install it and reload ACC: ${errorMessage(error)}`)
+      }
+    }
+    if (Object.keys(entries).length) scoped.plugin(nativeLspStdio, { servers: entries })
+  })
 
   const watchedTools = new Set(config.tools)
   // Extension → checkers, precomputed once so a hot post-execute path does no
@@ -304,6 +329,7 @@ export function apply(ctx: Context, config: Config): void {
       return { checker: checker.name, output: errorMessage(error) }
     }
     const argv = substitute(checker.argv, filePath, cwd)
+    argv[0] = config.executables[argv[0] as string] ?? argv[0] as string
 
     let executable: string
     try {
