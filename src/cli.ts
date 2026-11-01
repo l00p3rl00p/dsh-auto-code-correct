@@ -137,7 +137,7 @@ exec ${quoted(process.execPath)} ${quoted(resolve(process.argv[1] ?? ''))} hygie
 }
 /** Check indexed script bytes, not potentially different unstaged working-tree content. */
 function stagedShellcheck(cwd: string): void {
-  const paths = git(['diff', '--cached', '--name-only', '-z', '--diff-filter=ACMRT'], cwd).split('\\0').filter(path => path.endsWith('.sh'))
+  const paths = git(['diff', '--cached', '--name-only', '-z', '--diff-filter=ACMRT'], cwd).split('\0').filter(path => path.endsWith('.sh'))
   for (const path of paths) {
     const staged = spawnSync('git', ['show', ':' + path], { cwd, encoding: 'utf8' })
     if (staged.status !== 0) throw new Error(`Could not read staged shell script ${path}: ${staged.stderr}`)
