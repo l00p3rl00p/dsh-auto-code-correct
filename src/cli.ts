@@ -103,8 +103,39 @@ function stagedLargeFiles(cwd: string, sizeLimit = 10 * 1024 * 1024): void {
     if (size > sizeLimit) throw new Error(`Oversized staged blob: ${path} (${size} bytes > ${sizeLimit})`)
   }
 }
+/** One user-owned hygiene settings document; not duplicated command definitions. */
+function readHygieneSelection(cwd: string): string[] {
+  const path = join(cwd, '.acc-hygiene.json')
+  if (!existsSync(path)) return ['git-diff', 'gitleaks', 'large-files']
+  const values: unknown = JSON.parse(readFileSync(path, 'utf8'))
+  if (typeof values !== 'object' || values === null || !('enabled' in values)) throw new Error('Invalid .acc-hygiene.json: expected enabled object')
+  const enabled = (values as { enabled: unknown }).enabled
+  if (typeof enabled !== 'object' || enabled === null || Array.isArray(enabled)) throw new Error('Invalid .acc-hygiene.json: enabled must be an object')
+  const allowed = new Set(CAPABILITIES.filter(c => c.group === 'hygiene').map(c => c.id))
+  for (const [id, value] of Object.entries(enabled)) {
+    if (!allowed.has(id) || typeof value !== 'boolean') throw new Error(`Invalid hygiene setting ${id}`)
+  }
+  return Object.entries(enabled).filter(([, active]) => active).map(([id]) => id)
+}
+/** Install a Git-native staged-change hook without clobbering an existing hook. */
+function installHook(cwd: string): void {
+  const existingHooksPath = spawnSync('git', ['config', '--get', 'core.hooksPath'], { cwd, encoding: 'utf8' })
+  if (existingHooksPath.status === 0 && existingHooksPath.stdout.trim()) {
+    throw new Error('Git core.hooksPath is already configured; integrate acc-tools hygiene into that existing hook instead of replacing it')
+  }
+  const gitDir = git(['rev-parse', '--absolute-git-dir'], cwd).trim()
+  const path = join(gitDir, 'hooks', 'pre-commit')
+  if (existsSync(path)) throw new Error(`Existing pre-commit hook at ${path} must be preserved; add an acc-tools hygiene invocation to it manually`)
+  mkdirSync(dirname(path), { recursive: true })
+  const quoted = (input: string): string => "'" + input.replaceAll("'", "'\\''") + "'"
+  const script = `#!/bin/sh
+exec ${quoted(process.execPath)} ${quoted(resolve(process.argv[1] ?? ''))} hygiene
+`
+  writeFileSync(path, script, { mode: 0o755, flag: 'wx' })
+  console.log(`INSTALLED ACC pre-commit hook: ${path}`)
+}
 function hygiene(ids: string[], cwd: string): void {
-  const selected = new Set(ids.length ? ids : ['git-diff', 'gitleaks', 'large-files'])
+  const selected = new Set(ids.length ? ids : readHygieneSelection(cwd))
   for (const id of selected) {
     if (id === 'git-diff') exec('git', ['diff', '--cached', '--check'], { cwd })
     else if (id === 'gitleaks') exec('gitleaks', ['git', '--pre-commit', '--staged', '--redact'], { cwd })
@@ -126,9 +157,10 @@ function main(): void {
     }
   } else if (action === 'install' && id) install(id, prefix)
   else if (action === 'uninstall' && id) uninstall(id)
+  else if (action === 'hooks' && id === 'install') installHook(process.cwd())
   else if (action === 'hygiene') hygiene([id, ...rest].filter(Boolean).filter(x => x !== '--prefix'), process.cwd())
   else {
-    console.log('Usage: acc-tools list | install <capability> [--prefix DIR] | uninstall <capability> | hygiene [check...]')
+    console.log('Usage: acc-tools list | install <capability> [--prefix DIR] | uninstall <capability> | hooks install | hygiene [check...]')
     process.exitCode = 2
   }
 }
