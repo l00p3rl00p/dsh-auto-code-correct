@@ -15,6 +15,7 @@ import { capabilityEnabled, languageForExtension } from './capabilities.js'
 import { registerAccCommands } from './commands.js'
 import type { Language } from './capabilities.js'
 import * as nativeLspStdio from '@deepseek-ai/dsh-lsp-stdio'
+import * as lspActions from 'dsh-lsp-actions'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -272,6 +273,33 @@ export function apply(ctx: Context, config: Config): void {
       }
     }
     if (Object.keys(entries).length) scoped.plugin(nativeLspStdio, { servers: entries })
+  })
+
+  // Reuse the existing multi-language LSP actions plugin. It accepts an arbitrary
+  // table of language servers; no fork or three copies of its client are needed.
+  // Already-registered action tools remain authoritative and are not duplicated.
+  ctx.inject(['fs', 'tools', 'subprocess'], async scoped => {
+    const actionNames = ['lsp_diagnostics', 'lsp_format', 'lsp_completion', 'lsp_code_action']
+    if (actionNames.some(action => scoped.tools.get(action))) {
+      console.info('[auto-code-correct] existing LSP action tools detected; retaining them')
+      return
+    }
+    const entries: Record<string, { command: string; args: string[]; extensionToLanguage: Record<string, string>; projectMarkers: string[] }> = {}
+    for (const option of [
+      { language: 'python' as const, id: 'ty-lsp', command: 'ty', args: ['server'], mapping: { '.py': 'python' }, markers: ['pyproject.toml'] },
+      { language: 'rust' as const, id: 'rust-analyzer', command: 'rust-analyzer', args: [], mapping: { '.rs': 'rust' }, markers: ['Cargo.toml'] },
+      { language: 'typescript' as const, id: 'typescript-lsp', command: 'typescript-language-server', args: ['--stdio'], mapping: { '.ts': 'typescript', '.tsx': 'typescriptreact' }, markers: ['tsconfig.json', 'package.json'] },
+    ]) {
+      if (!config.languages[option.language] || !config.languageServers[option.language] || config.capabilities[option.id] === false) continue
+      const command = config.executables[option.command] ?? option.command
+      try {
+        await scoped.subprocess.resolveExecutable(command)
+        entries[option.language] = { command, args: option.args, extensionToLanguage: option.mapping, projectMarkers: option.markers }
+      } catch (error) {
+        console.warn(`[auto-code-correct] LSP actions for ${option.language} unavailable: ${errorMessage(error)}`)
+      }
+    }
+    if (Object.keys(entries).length > 0) scoped.plugin(lspActions, { servers: entries, editor: { enabled: false } })
   })
 
   const watchedTools = new Set(config.tools)
