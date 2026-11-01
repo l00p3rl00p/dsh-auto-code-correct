@@ -18,7 +18,7 @@ These are **literal repository-relative paths and identifiers**, not shorthand n
 | Package, dependency and script version authority | [`package.json`](package.json) | `engines.node`, `engines.dsh`, `dependencies`, `peerDependencies`, `devDependencies`, `scripts.verify`, `scripts.packcheck`, `dsh.bundle.patch`, `bin.acc-tools` |
 | Compiled output paths | [`tsdown.config.ts`](tsdown.config.ts) | `src/index.ts` → `lib/index.js`, `src/cli.ts` → `lib/cli.js`, `src/client/index.tsx` → `lib/client.js` |
 | Packaging and cross-repo verification environment | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | GitHub Actions secret `ACC_QDOCKER_READ_TOKEN`; job environment `ACC_DOCKER_INSTALLER`; read-only checkout path `.acc-docker-source/stacks/llm-runtime/install-code-and-quality.sh` |
-| Optional project-local hygiene selection | [`src/cli.ts`](src/cli.ts) | `<project-root>/.acc-hygiene.json` with JSON `enabled` object of capability IDs and boolean values; **not** a checked-in default file |
+| Generated Git hygiene projection (not user-editable) | [`src/hygiene-hook.ts`](src/hygiene-hook.ts), [`src/cli.ts`](src/cli.ts) | `<git-dir>/acc-hygiene-effective.json` with JSON `enabled` boolean and `checks` capability IDs; generated from native DSH `hygieneEnabled` / `capabilities` settings |
 | Historical, **inactive** installation experiments | [`hooks.json`](hooks.json), [`check.sh`](check.sh) | Legacy `hooks[].event: post-tool` and `DSH_HOME` fallback in `check.sh`; **not** the Cordis plugin install mechanism |
 
 ### Exact runtime environment variables and resolved locations
