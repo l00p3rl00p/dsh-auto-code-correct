@@ -155,12 +155,16 @@ function main(): void {
     for (const item of CAPABILITIES) {
       console.log(`${item.language ?? 'repository'} / ${item.group} / ${item.id}: ${locate(item.executable, prefix) ?? 'missing'}`)
     }
+  } else if (action === 'status' && id) {
+    const executable = toolId(id)
+    const found = locate(executable, prefix)
+    console.log(JSON.stringify({ capability: id, executable, status: found ? 'installed' : 'missing', path: found ?? null, managed: Boolean(readLedger()[executable]) }))
   } else if (action === 'install' && id) install(id, prefix)
   else if (action === 'uninstall' && id) uninstall(id)
   else if (action === 'hooks' && id === 'install') installHook(process.cwd())
   else if (action === 'hygiene') hygiene([id, ...rest].filter(Boolean).filter(x => x !== '--prefix'), process.cwd())
   else {
-    console.log('Usage: acc-tools list | install <capability> [--prefix DIR] | uninstall <capability> | hooks install | hygiene [check...]')
+    console.log('Usage: acc-tools list | status <capability> | install <capability> [--prefix DIR] | uninstall <capability> | hooks install | hygiene [check...]')
     process.exitCode = 2
   }
 }
