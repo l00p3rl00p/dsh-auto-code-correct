@@ -1,24 +1,25 @@
-# dsh-auto-code-correct
+# dsh-auto-code-correct (ACC)
 
-A DeepSeek Harness hook that lints each Python or shell file the agent edits or writes,
-using Ruff and ty (Python) and ShellCheck (shell), all installed in the harness.
+Native DeepSeek Harness Cordis plugin for automatic code correction and verification, derived from the MIT-licensed [dsh-lens-lite](https://github.com/ben7am1n/dsh-lens-lite).
 
-## Install
+## Integration
 
-1. Copy `check.sh` to `$DSH_HOME/auto-code-correct/check.sh` (the harness data folder).
-2. Copy `hooks.json` to `$DSH_HOME/hooks.json`.
-3. Install the hook plugin, `dsh-plugin-hooks` (third party, not pinned yet):
-   `dsh plugin --profile web add dsh-plugin-hooks`, then mount it.
+The native implementation is in `src/index.ts`, registered on `tools/post-execute`. It uses the harness `ctx.subprocess` provider and returns remaining diagnostics as model-visible `additionalContexts` in the same tool result. The plugin package and example native profile patch are `package.json` and `cordis.patch.yml`.
 
-## What it does
+**The old `hooks.json` and `check.sh` are superseded legacy experiments, not the installation method.** Do not install the third-party `dsh-plugin-hooks` for ACC.
 
-After every `edit` or `write`, the hook runs the matching checks and writes the result to
-`$DSH_HOME/auto-code-correct/findings.txt`. It never blocks the agent.
+## Execution
 
-## Not yet verified
+For successful native `write`, `edit`, and `str_replace_editor` operations, ACC resolves the actual path from the tool result (falling back to `file_path`), runs matching configured fixers in order, then runs read-only verifiers concurrently. Python defaults use Ruff fix, Ruff format, Ruff check, and ty; Rust defaults use rustfmt; shell defaults use ShellCheck. Commands are invoked without shell interpretation.
 
-- **Feedback to the agent.** The findings are written to a file. Nothing yet shows them to the
-  agent on its next turn. Until that is wired, this only records results.
-- **File path field.** The hook reads the path from `args.path` (or `args.file_path`). Confirm
-  this for each edit/write tool the harness uses.
-- **Plugin version.** `dsh-plugin-hooks` is third party. Pin it before use.
+## Current implementation boundary
+
+The native plugin source and configuration are committed, but have **not yet been compiled or exercised inside DeepSeek Harness**. The initial implementation inherits Lite's one-path-per-tool-result behavior; the separately developed file-set planner has not yet been integrated into the native plugin. Multi-file batching across separate tool calls is not implemented. Rustfmt's edition is an example and should follow the repository's configuration. Tools and files must be accessible from the actual harness runtime. Do not claim inaccessible files were corrected.
+
+## Validation needed
+
+Run `pnpm install --ignore-workspace`, `pnpm run typecheck`, `pnpm test`, and `pnpm run build` in a working environment with the declared dependencies. Then test real harness write/edit results and verify that corrected file contents and remaining findings reach the agent. The source has not yet passed these integration tests.
+
+## License
+
+MIT, preserving attribution to dsh-lens-lite. See upstream for original copyright and license terms.
