@@ -1,0 +1,27 @@
+- insert:
+    - id: auto-code-correct
+      name: dsh-auto-code-correct
+      config:
+        tools: [write, edit, str_replace_editor]
+        maxDiagnosticChars: 4000
+        fixers:
+          - name: ruff-fix
+            extensions: ['.py']
+            argv: ['ruff', 'check', '--fix', '{file}']
+            cleanExitCodes: [0]
+          - name: ruff-format
+            extensions: ['.py']
+            argv: ['ruff', 'format', '{file}']
+          - name: rustfmt
+            extensions: ['.rs']
+            argv: ['rustfmt', '--edition', '2021', '{file}']
+        checkers:
+          - name: ruff-verify
+            extensions: ['.py']
+            argv: ['ruff', 'check', '{file}']
+          - name: ty
+            extensions: ['.py']
+            argv: ['ty', 'check', '{file}']
+          - name: shellcheck
+            extensions: ['.sh']
+            argv: ['shellcheck', '{file}']
