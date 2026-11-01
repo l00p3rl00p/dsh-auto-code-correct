@@ -3,6 +3,13 @@
       name: dsh-auto-code-correct
       config:
         tools: [write, edit, str_replace_editor]
+        languages:
+          python: true
+          rust: false
+          typescript: false
+        capabilities: {}
+        # Each fixer/checker name is independently switchable under capabilities.
+        # Example: capabilities: { ruff-fix: false, ty: true }
         maxDiagnosticChars: 4000
         fixers:
           - name: ruff-fix
