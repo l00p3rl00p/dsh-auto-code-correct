@@ -18,7 +18,10 @@
       "default": "./lib/index.js"
     },
     "./cordis.patch.yml": "./cordis.patch.yml",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./client": {
+      "default": "./lib/client.js"
+    }
   },
   "files": [
     "lib",
@@ -39,6 +42,14 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-settings-plugins"
+      ],
+      "platform": "web"
     }
   },
   "peerDependencies": {
@@ -47,7 +58,9 @@
     "@deepseek-ai/dsh-session": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-subprocess": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-tools": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-lsp-stdio": "^0.1.0-rc.6"
+    "@deepseek-ai/dsh-lsp-stdio": "^0.1.0-rc.6",
+    "react": "^18.2.0",
+    "@deepseek-ai/dsh-client-ui-settings": ">=0.2.0-rc.1"
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "^3.18.1"
@@ -73,14 +86,19 @@
     "@deepseek-ai/dsh-lsp": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-fs": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-fs-local": "^0.1.0-rc.6",
-    "@deepseek-ai/dsh-tool-lsp": "^0.1.0-rc.6"
+    "@deepseek-ai/dsh-tool-lsp": "^0.1.0-rc.6",
+    "react": "^18.3.1",
+    "@types/react": "^18.3.1",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-ui-settings": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-ui-settings-plugins": "^0.2.0-rc.1"
   },
   "scripts": {
     "build": "tsdown",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.client.json --noEmit",
     "lint": "eslint src test",
-    "formatcheck": "prettier --check 'src/**/*.ts' 'test/**/*.ts'",
+    "formatcheck": "prettier --check 'src/**/*.{ts,tsx}' 'test/**/*.ts'",
     "verify": "pnpm run lint && pnpm run formatcheck && pnpm run typecheck && pnpm test && pnpm run build",
     "prepare": "pnpm run build",
     "packcheck": "pnpm run build && mkdir -p dist && pnpm pack --pack-destination ./dist"
