@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { routeFile } from 'dsh-lsp-actions'
-import type { ResolvedServer } from 'dsh-lsp-actions'
 
 const entries = [
   { serverId: 'python', entry: { extensionToLanguage: { '.py': 'python' }, fileGlobs: [], projectMarkers: [] } },
   { serverId: 'rust', entry: { extensionToLanguage: { '.rs': 'rust' }, fileGlobs: [], projectMarkers: [] } },
   { serverId: 'typescript', entry: { extensionToLanguage: { '.ts': 'typescript', '.tsx': 'typescriptreact' }, fileGlobs: [], projectMarkers: [] } },
-] as unknown as ResolvedServer[]
+] as unknown as Parameters<typeof routeFile>[0]
 
 describe('upstream multi-language LSP action routing', () => {
   it.each([
