@@ -1,7 +1,7 @@
 {
   "name": "dsh-auto-code-correct",
   "version": "0.1.0",
-  "description": "Native DeepSeek Harness post-edit automatic correction and verification",
+  "description": "Native DeepSeek Harness Auto Code Correct: language gates, opt-in tool manager, autofix and hygiene",
   "keywords": [
     "dsh",
     "dsh-plugin",
@@ -77,6 +77,9 @@
     "formatcheck": "prettier --check 'src/**/*.ts' 'test/**/*.ts'",
     "verify": "pnpm run lint && pnpm run formatcheck && pnpm run typecheck && pnpm test && pnpm run build",
     "prepare": "pnpm run build",
-    "packcheck": "pnpm pack --pack-destination ./dist"
+    "packcheck": "pnpm run build && mkdir -p dist && pnpm pack --pack-destination ./dist"
+  },
+  "bin": {
+    "acc-tools": "./lib/cli.js"
   }
 }
