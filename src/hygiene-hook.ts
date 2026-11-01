@@ -40,8 +40,8 @@ export function syncGitHygiene(cwd: string, policy: HygienePolicy): void {
   mkdirSync(loc.hookDir, { recursive: true })
   const hook = join(loc.hookDir, 'pre-commit')
   const cli = fileURLToPath(new URL('./cli.js', import.meta.url))
-  const runner = 'if command -v acc-tools >/dev/null 2>&1; then\n  acc-tools hygiene\nelse\n  ' +
-    quoteShell(process.execPath) + ' ' + quoteShell(cli) + ' hygiene\nfi'
+  const runner = 'if command -v acc-tools >/dev/null 2>&1; then\n  acc-tools hygiene || exit $?\nelse\n  ' +
+    quoteShell(process.execPath) + ' ' + quoteShell(cli) + ' hygiene || exit $?\nfi'
   const block = begin + '\n' + runner + '\n' + end + '\n'
   const existing = existsSync(hook) ? readFileSync(hook, 'utf8') : ''
   if (existing.includes(begin)) {
