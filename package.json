@@ -62,11 +62,19 @@
     "@types/node": "^26.2.0",
     "tsdown": "^0.15.6",
     "typescript": "^5.9.3",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "eslint": "^9.39.0",
+    "@typescript-eslint/parser": "^8.46.0",
+    "@typescript-eslint/eslint-plugin": "^8.46.0",
+    "prettier": "^3.6.2",
+    "typescript-language-server": "^5.1.3"
   },
   "scripts": {
     "build": "tsdown",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src test",
+    "formatcheck": "prettier --check 'src/**/*.ts' 'test/**/*.ts'",
+    "verify": "pnpm run lint && pnpm run formatcheck && pnpm run typecheck && pnpm test && pnpm run build"
   }
 }
