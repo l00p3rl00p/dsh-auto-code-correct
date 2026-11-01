@@ -19,18 +19,18 @@ const writeLedger = (ledger: Ledger): void => {
   mkdirSync(dirname(ledgerPath), { recursive: true })
   writeFileSync(ledgerPath, JSON.stringify(ledger, null, 2) + '\n', { mode: 0o600 })
 }
-function exec(command: string, args: string[], options: { cwd?: string; quiet?: boolean } = {}): void {
-  const run = spawnSync(command, args, { encoding: 'utf8', cwd: options.cwd, stdio: options.quiet ? 'pipe' : 'inherit' })
+function exec(command: string, args: string[], options: { cwd?: string; quiet?: boolean; env?: NodeJS.ProcessEnv } = {}): void {
+  const run = spawnSync(command, args, { encoding: 'utf8', cwd: options.cwd, env: options.env ?? process.env, stdio: options.quiet ? 'pipe' : 'inherit' })
   if (run.error) throw run.error
   if (run.status !== 0) throw new Error(`${command} ${args.join(' ')} failed (exit ${run.status ?? 'unknown'})`)
 }
 function locate(executable: string, prefix?: string): string | undefined {
   const suffix = process.platform === 'win32' ? '.cmd' : ''
   if (prefix) {
+    const direct = resolve(prefix, 'bin', executable)
+    if (existsSync(direct)) return direct
     const candidate = resolve(prefix, 'node_modules', '.bin', executable + suffix)
     if (existsSync(candidate)) return candidate
-    const bin = resolve(prefix, 'bin', executable)
-    if (existsSync(bin)) return bin
   }
   const finder = process.platform === 'win32' ? 'where' : 'which'
   const run = spawnSync(finder, [executable], { encoding: 'utf8' })
@@ -63,8 +63,8 @@ function install(id: string, prefix: string): void {
   const pkg = packages[executable]
   if (!pkg) throw new Error(`No native vetted installer for ${executable}. Supply its location via the DSH profile or install using its official package manager.`)
   console.log(`Installing ${pkg.packageName} using ${pkg.manager}; target ${prefix}`)
-  if (pkg.manager === 'npm') exec('npm', ['install', '--prefix', prefix, '--no-save', pkg.packageName])
-  else if (pkg.manager === 'uv') exec('uv', ['tool', 'install', pkg.packageName, '--tool-dir', join(prefix, 'uv-tools'), '--tool-bin-dir', join(prefix, 'bin')])
+  if (pkg.manager === 'npm') exec('npm', ['install', '--prefix', prefix, '--save', pkg.packageName])
+  else if (pkg.manager === 'uv') exec('uv', ['tool', 'install', pkg.packageName], { env: { ...process.env, UV_TOOL_DIR: join(prefix, 'uv-tools'), UV_TOOL_BIN_DIR: join(prefix, 'bin') } })
   else exec('rustup', ['component', 'add', pkg.packageName])
   const installed = locate(executable, prefix)
   if (!installed) throw new Error(`Installation finished but ${executable} is not discoverable; configure its absolute path before enabling the feature`)
@@ -82,7 +82,7 @@ function uninstall(id: string): void {
     return
   }
   if (record.manager === 'npm') exec('npm', ['uninstall', '--prefix', record.prefix ?? home, record.packageName])
-  else if (record.manager === 'uv') exec('uv', ['tool', 'uninstall', record.packageName, '--tool-dir', join(record.prefix ?? home, 'uv-tools'), '--tool-bin-dir', join(record.prefix ?? home, 'bin')])
+  else if (record.manager === 'uv') exec('uv', ['tool', 'uninstall', record.packageName], { env: { ...process.env, UV_TOOL_DIR: join(record.prefix ?? home, 'uv-tools'), UV_TOOL_BIN_DIR: join(record.prefix ?? home, 'bin') } })
   else exec('rustup', ['component', 'remove', record.packageName])
   delete ledger[executable]
   writeLedger(ledger)
