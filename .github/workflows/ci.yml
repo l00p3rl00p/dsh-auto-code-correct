@@ -6,14 +6,21 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    env:
+      ACC_QDOCKER_READ_TOKEN: ${{ secrets.ACC_QDOCKER_READ_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - name: Read authoritative Docker code-and-quality installer
+        if: env.ACC_QDOCKER_READ_TOKEN != ''
         uses: actions/checkout@v4
         with:
           repository: l00p3rl00p/qdocker-compose
+          token: ${{ env.ACC_QDOCKER_READ_TOKEN }}
           path: .acc-docker-source
           persist-credentials: false
+      - name: Report cross-repo verification boundary
+        if: env.ACC_QDOCKER_READ_TOKEN == ''
+        run: echo "::warning::Both GitHub repositories are private. Set ACC_QDOCKER_READ_TOKEN with read-only contents access to qdocker-compose to activate the authoritative cross-repo CI check. The independent ACC unit tests still run."
       - uses: pnpm/action-setup@v4
         with:
           version: 10
@@ -36,7 +43,7 @@ jobs:
         run: pnpm run typecheck
       - name: Unit tests and cross-repo tool inventory
         env:
-          ACC_DOCKER_INSTALLER: .acc-docker-source/stacks/llm-runtime/install-code-and-quality.sh
+          ACC_DOCKER_INSTALLER: ${{ env.ACC_QDOCKER_READ_TOKEN != '' && '.acc-docker-source/stacks/llm-runtime/install-code-and-quality.sh' || '' }}
         run: pnpm test
       - name: Build
         run: pnpm run build
