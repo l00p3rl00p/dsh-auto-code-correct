@@ -14,7 +14,7 @@ export const CAPABILITIES: readonly Capability[] = [
   { id: 'ruff-format', label: 'Ruff formatter', group: 'autoCorrect', language: 'python', executable: 'ruff', description: 'Format Python files' },
   { id: 'ruff-verify', label: 'Ruff lint check', group: 'autoCorrect', language: 'python', executable: 'ruff', description: 'Verify Python lint' },
   { id: 'ty', label: 'ty', group: 'autoCorrect', language: 'python', executable: 'ty', description: 'Python type verification' },
-  { id: 'basedpyright', label: 'BasedPyright LSP', group: 'languageServer', language: 'python', executable: 'basedpyright-langserver', description: 'Python code navigation' },
+  { id: 'ty-lsp', label: 'ty language server', group: 'languageServer', language: 'python', executable: 'ty', description: 'Python code navigation using the installed ty server' },
   { id: 'rustfmt', label: 'rustfmt', group: 'autoCorrect', language: 'rust', executable: 'rustfmt', description: 'Format Rust' },
   { id: 'clippy-fix', label: 'Clippy autofix', group: 'autoCorrect', language: 'rust', executable: 'cargo-clippy', description: 'Fix Rust lint' },
   { id: 'cargo-check', label: 'Cargo check', group: 'autoCorrect', language: 'rust', executable: 'cargo', description: 'Verify Rust compilation' },
