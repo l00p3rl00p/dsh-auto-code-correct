@@ -12,6 +12,7 @@
 import { dirname, isAbsolute, relative, resolve, parse } from 'node:path'
 import { existsSync } from 'node:fs'
 import { capabilityEnabled, languageForExtension } from './capabilities.js'
+import { registerAccCommands } from './commands.js'
 import type { Language } from './capabilities.js'
 import * as nativeLspStdio from '@deepseek-ai/dsh-lsp-stdio'
 import type { Context } from '@deepseek-ai/cordis'
@@ -236,6 +237,7 @@ function validateCheckers(checkers: readonly CheckerConfig[]): void {
  * @param config - validated {@link Config}; checker invariants are re-checked fail-loud here.
  */
 export function apply(ctx: Context, config: Config): void {
+  registerAccCommands(ctx)
   validateCheckers([...config.fixers, ...config.checkers])
   const effectiveEnabled = (extension: string, name: string): boolean => {
     return capabilityEnabled(languageForExtension(extension), name, config.languages, config.capabilities)
