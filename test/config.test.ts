@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { CAPABILITIES, LANGUAGE_EXTENSIONS } from '../src/capabilities'
+import { CAPABILITIES, LANGUAGE_EXTENSIONS } from '../src/capabilities.js'
 
 describe('ACC language configuration', () => {
   const config = readFileSync(new URL('../cordis.patch.yml', import.meta.url), 'utf8')
