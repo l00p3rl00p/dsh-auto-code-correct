@@ -289,8 +289,6 @@ export function apply(ctx: Context, config: Config): void {
     }
   }
 
-  /** Checkers whose executable could not be resolved; reported once, then skipped. */
-  const brokenCheckers = new Set<string>()
 
   /** Project-scoped tools must execute from the nearest actual project root. */
   function workingDirectory(filePath: string, checker: CheckerConfig): string {
@@ -319,8 +317,6 @@ export function apply(ctx: Context, config: Config): void {
   async function runChecker(
     checker: CheckerConfig, filePath: string, signal: AbortSignal,
   ): Promise<Finding | undefined> {
-    // Re-resolve on the next edit if a dependency was installed after the previous attempt.
-    if (brokenCheckers.has(checker.name)) brokenCheckers.delete(checker.name)
     const subprocess: SubprocessRuntime = ctx.subprocess
     let cwd: string
     try {
@@ -338,7 +334,6 @@ export function apply(ctx: Context, config: Config): void {
       // An unresolvable executable is an environment fact, not config the
       // schema could have rejected: report it once as a finding so the person
       // reading the transcript sees why diagnostics stopped, then stay quiet.
-      brokenCheckers.add(checker.name)
       return { checker: checker.name, output: `checker unavailable: ${errorMessage(error)}` }
     }
 
@@ -382,7 +377,8 @@ export function apply(ctx: Context, config: Config): void {
   async function diagnose(filePath: string, signal: AbortSignal): Promise<UserMessage | undefined> {
     const absolute = isAbsolute(filePath) ? filePath : resolve(filePath)
     const ext = extensionOf(absolute)
-    if (!languageForExtension(ext) || !config.languages[languageForExtension(ext)!]) return undefined
+    const language = languageForExtension(ext)
+    if (!language || !config.languages[language]) return undefined
     const fixers = (fixersByExtension.get(ext) ?? []).filter(item => effectiveEnabled(ext, item.name))
     const checkers = (byExtension.get(ext) ?? []).filter(item => effectiveEnabled(ext, item.name))
     if (!fixers.length && !checkers.length) return undefined
