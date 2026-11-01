@@ -10,6 +10,7 @@ import { dirname, join, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { CAPABILITIES } from './capabilities.js'
 import { configuredToolDirectories, findTool } from './discovery.js'
+import { readEffectiveHygiene, syncGitHygiene, DEFAULT_HYGIENE } from './hygiene-hook.js'
 
 type InstallRecord = { manager: 'npm' | 'uv' | 'rustup' | 'go'; packageName: string; prefix?: string }
 type Ledger = Record<string, InstallRecord>
@@ -104,36 +105,22 @@ function stagedLargeFiles(cwd: string, sizeLimit = 10 * 1024 * 1024): void {
     if (size > sizeLimit) throw new Error(`Oversized staged blob: ${path} (${size} bytes > ${sizeLimit})`)
   }
 }
-/** One user-owned hygiene settings document; not duplicated command definitions. */
+/** Native DSH profile is the authority. The Git-dir policy is its generated projection. */
 function readHygieneSelection(cwd: string): string[] {
-  const path = join(cwd, '.acc-hygiene.json')
-  if (!existsSync(path)) return ['git-diff', 'gitleaks', 'large-files']
-  const values: unknown = JSON.parse(readFileSync(path, 'utf8'))
-  if (typeof values !== 'object' || values === null || !('enabled' in values)) throw new Error('Invalid .acc-hygiene.json: expected enabled object')
-  const enabled = (values as { enabled: unknown }).enabled
-  if (typeof enabled !== 'object' || enabled === null || Array.isArray(enabled)) throw new Error('Invalid .acc-hygiene.json: enabled must be an object')
+  const policy = readEffectiveHygiene(cwd)
+  if (!policy.enabled) return []
   const allowed = new Set(CAPABILITIES.filter(c => c.group === 'hygiene').map(c => c.id))
-  for (const [id, value] of Object.entries(enabled)) {
-    if (!allowed.has(id) || typeof value !== 'boolean') throw new Error(`Invalid hygiene setting ${id}`)
+  for (const id of policy.checks) {
+    if (!allowed.has(id)) throw new Error('Invalid generated ACC Git hygiene capability: ' + id)
   }
-  return Object.entries(enabled).filter(([, active]) => active).map(([id]) => id)
+  return policy.checks
 }
 /** Install a Git-native staged-change hook without clobbering an existing hook. */
 function installHook(cwd: string): void {
-  const existingHooksPath = spawnSync('git', ['config', '--get', 'core.hooksPath'], { cwd, encoding: 'utf8' })
-  if (existingHooksPath.status === 0 && existingHooksPath.stdout.trim()) {
-    throw new Error('Git core.hooksPath is already configured; integrate acc-tools hygiene into that existing hook instead of replacing it')
-  }
-  const gitDir = git(['rev-parse', '--absolute-git-dir'], cwd).trim()
-  const path = join(gitDir, 'hooks', 'pre-commit')
-  if (existsSync(path)) throw new Error(`Existing pre-commit hook at ${path} must be preserved; add an acc-tools hygiene invocation to it manually`)
-  mkdirSync(dirname(path), { recursive: true })
-  const quoted = (input: string): string => "'" + input.replaceAll("'", "'\\''") + "'"
-  const script = `#!/bin/sh
-exec ${quoted(process.execPath)} ${quoted(resolve(process.argv[1] ?? ''))} hygiene
-`
-  writeFileSync(path, script, { mode: 0o755, flag: 'wx' })
-  console.log(`INSTALLED ACC pre-commit hook: ${path}`)
+  // Explicit command installs the same managed hook as native ACC startup.
+  // It preserves any existing pre-commit hook and its content.
+  syncGitHygiene(cwd, { enabled: true, checks: [...DEFAULT_HYGIENE] })
+  console.log('ACC native Git pre-commit hook synchronized')
 }
 /** Check indexed script bytes, not potentially different unstaged working-tree content. */
 function stagedShellcheck(cwd: string): void {
@@ -148,6 +135,7 @@ function stagedShellcheck(cwd: string): void {
 }
 function hygiene(ids: string[], cwd: string): void {
   const selected = new Set(ids.length ? ids : readHygieneSelection(cwd))
+  if (selected.size === 0) { console.log('SKIPPED ACC Git hygiene: disabled'); return }
   for (const id of selected) {
     if (id === 'shellcheck') stagedShellcheck(cwd)
     else if (id === 'git-diff') exec('git', ['diff', '--cached', '--check'], { cwd })
