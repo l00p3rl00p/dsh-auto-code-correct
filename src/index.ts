@@ -113,7 +113,12 @@ export const Config: z<Config> = z.object({
  * is load-bearing: an unlabeled context renders as a user prompt in derived
  * history.
  */
-const PLUGIN_SOURCE: MessageSource = { kind: 'plugin', plugin: 'auto-code-correct' }
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'auto-code-correct': { kind: 'auto-code-correct' }
+  }
+}
+const PLUGIN_SOURCE: MessageSource = { kind: 'auto-code-correct' }
 
 /** One checker's verdict for one file. */
 interface Finding {
@@ -259,7 +264,7 @@ export function apply(ctx: Context, config: Config): void {
       const command = config.executables[item.command] ?? item.command
       try {
         await scoped.subprocess.resolveExecutable(command)
-        entries[item.language] = { command, args: item.args, extensionToLanguage: item.mapping }
+        entries[item.language] = { command, args: item.args, extensionToLanguage: { ...item.mapping } }
       } catch (error) {
         console.warn(`[auto-code-correct] ${item.id} unavailable; install it and reload ACC: ${errorMessage(error)}`)
       }
