@@ -28,6 +28,33 @@ The upstream LSP-actions dependency has its own tests for TypeScript, routing, f
 
 This dependency is version-pinned; it is not a fork and no upstream LSP source has been copied. The connected GitHub tooling in this session does not expose repository forking. Fork only if a demonstrated defect requires an approved downstream change.
 
+## Portable tool discovery and two-way Docker reconciliation
+
+ACC is **not tied to QDev's Docker filesystem**. It searches in this order: explicit executable path, ACC-managed install prefix, project-local Node binaries, optional user-provided tool directories (`ACC_TOOL_PATHS`, separated using the OS path delimiter), and the running Harness PATH. It probes only enabled language servers and only runs the fix/check tools for enabled languages. Disabled languages require no installation.
+
+The DSH human command `/acc status <capability-id>` reports whether a tool is available. `/acc link <capability-id> /absolute/path/to/executable` validates an existing executable and saves it to the plugin's `executables` config via DSH's **native configuration editor**. This is a link in configuration, not a symlink or another software installation. `/acc install <capability-id> [destination]` is for tools genuinely missing; installing into a mounted read-only location is not supported. `/acc uninstall <capability-id>` retains tools not owned by ACC. The command UI is the supported mechanism pending integration of equivalent action buttons in the web settings panel.
+
+For example, on the intended QDev Docker setup the following are installed in its helper volume and made available on PATH: Ruff, ty, cargo, rustfmt, Clippy, rust-analyzer, ESLint, Prettier, tsc, TypeScript Language Server, ShellCheck, and Gitleaks. ACC now accounts for **all twelve executables**. Git is an underlying system command, not one of the independently installed Code-and-Quality helpers.
+
+**Reverse reconciliation:** ACC's optional `license-audit` requires `license-checker`, which is *not* installed by the QDev Code-and-Quality installer. `dependency-audit` runs `npm audit` using npm supplied with Node, not a separate security package; the historical secret scan reuses Gitleaks. These are **optional** and do not justify expanding the Docker base install. No additional formatter, typechecker, or LSP is required by ACC's default Python/Rust/TypeScript scope.
+
+GitHub Actions checks ACC's capability registry against a read-only checkout of the **real** QDev installer script, rather than copying source files into ACC. It does not edit or run that installer. The cross-repo test establishes declared-tool coverage; the separate QDev Docker CI checks live executable availability inside the Harness container. A real local Harness session still needs to exercise the native plugin hooks.
+
+### Installation examples
+
+```sh
+# Discover existing commands using your current Harness PATH and project:
+acc-tools list
+acc-tools find ruff-fix
+
+# If a tool exists outside PATH, link rather than reinstall:
+# From the DSH chat command surface:
+/acc link ruff-fix /absolute/path/to/ruff
+
+# Or give ACC a searchable tools directory when starting the Harness:
+export ACC_TOOL_PATHS=/path/to/existing/tools/bin
+```
+
 ## Install and build
 
 DeepSeek Harness officially supports bundle plugins with `dsh.bundle.patch`. ACC exports a Cordis `apply(ctx, config)` function and uses the native `tools/post-execute` event. This package builds with pnpm and tsdown.

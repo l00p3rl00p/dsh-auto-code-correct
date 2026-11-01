@@ -4,28 +4,49 @@
  * action without opening an unauthenticated installer HTTP endpoint.
  */
 import { fileURLToPath } from 'node:url'
-import { dirname } from 'node:path'
+import { dirname, isAbsolute } from 'node:path'
+import { findTool } from './discovery.js'
+import type {} from '@deepseek-ai/dsh-config-editor'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-commands'
 import { CAPABILITIES } from './capabilities.js'
 
 const cliPath = fileURLToPath(new URL('./cli.js', import.meta.url))
-const actions = new Set(['status', 'install', 'uninstall'])
+const actions = new Set(['status', 'install', 'uninstall', 'link'])
 
 export function registerAccCommands(ctx: Context): void {
   ctx.inject(['commands', 'subprocess'], commandCtx => {
     commandCtx.commands.register({
       name: 'acc',
       description: 'Inspect, install, or remove an Auto Code Correct dependency',
-      input: { hint: 'status|install|uninstall <capability-id> [installation-directory]' },
+      input: { hint: 'status|install|uninstall|link <capability-id> [installation-directory/path]' },
       handler: async ({ rawInput }) => {
         const input = rawInput.trim()
         const [action = '', id = '', ...directoryParts] = input.split(/\s+/)
         if (!actions.has(action) || !CAPABILITIES.some(cap => cap.id === id)) {
-          return { kind: 'error', text: 'Usage: /acc status|install|uninstall <capability-id> [installation-directory]' }
+          return { kind: 'error', text: 'Usage: /acc status|install|uninstall|link <capability-id> [installation-directory/path]' }
         }
         const directory = directoryParts.join(' ')
         if (directory.includes('\0')) return { kind: 'error', text: 'Invalid installation directory' }
+        if (action === 'link') {
+          if (!isAbsolute(directory)) return { kind: 'error', text: 'Link requires an absolute path to an executable.' }
+          const cap = CAPABILITIES.find(item => item.id === id)!
+          const found = findTool(cap.executable, { explicit: directory })
+          if (found.status !== 'installed') return { kind: 'error', text: 'Executable not found or not executable: ' + directory }
+          const editor = commandCtx.get('configEditor')
+          const entry = ctx.fiber?.entry
+          if (!editor || !entry) return { kind: 'error', text: 'DSH config editor unavailable; set ACC executables through profile configuration.' }
+          try {
+            await editor.edit(entry, current => ({
+              ...current,
+              executables: { ...((current.executables ?? {}) as Record<string, string>), [cap.executable]: found.path! },
+            }))
+            return { kind: 'success', text: 'Linked ' + cap.executable + ' to ' + found.path }
+          } catch (error) {
+            return { kind: 'error', text: error instanceof Error ? error.message : String(error) }
+          }
+        }
+
         const argv = [process.execPath, cliPath, action, id, ...directory ? ['--prefix', directory] : []]
         const maxBytes = 16_384
         try {

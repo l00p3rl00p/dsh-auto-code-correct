@@ -9,6 +9,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from '
 import { dirname, join, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { CAPABILITIES } from './capabilities.js'
+import { configuredToolDirectories, findTool } from './discovery.js'
 
 type InstallRecord = { manager: 'npm' | 'uv' | 'rustup' | 'go'; packageName: string; prefix?: string }
 type Ledger = Record<string, InstallRecord>
@@ -25,16 +26,9 @@ function exec(command: string, args: string[], options: { cwd?: string; quiet?: 
   if (run.status !== 0) throw new Error(`${command} ${args.join(' ')} failed (exit ${run.status ?? 'unknown'})`)
 }
 function locate(executable: string, prefix?: string): string | undefined {
-  const suffix = process.platform === 'win32' ? '.cmd' : ''
-  if (prefix) {
-    const direct = resolve(prefix, 'bin', executable)
-    if (existsSync(direct)) return direct
-    const candidate = resolve(prefix, 'node_modules', '.bin', executable + suffix)
-    if (existsSync(candidate)) return candidate
-  }
-  const finder = process.platform === 'win32' ? 'where' : 'which'
-  const run = spawnSync(finder, [executable], { encoding: 'utf8' })
-  return run.status === 0 ? run.stdout.split(/\r?\n/)[0]?.trim() || undefined : undefined
+  return findTool(executable, {
+    prefix, cwd: process.cwd(), toolDirectories: configuredToolDirectories(),
+  }).path
 }
 function toolId(id: string): string {
   const cap = CAPABILITIES.find(item => item.id === id)
@@ -141,10 +135,22 @@ exec ${quoted(process.execPath)} ${quoted(resolve(process.argv[1] ?? ''))} hygie
   writeFileSync(path, script, { mode: 0o755, flag: 'wx' })
   console.log(`INSTALLED ACC pre-commit hook: ${path}`)
 }
+/** Check indexed script bytes, not potentially different unstaged working-tree content. */
+function stagedShellcheck(cwd: string): void {
+  const paths = git(['diff', '--cached', '--name-only', '-z', '--diff-filter=ACMRT'], cwd).split('\0').filter(path => path.endsWith('.sh'))
+  for (const path of paths) {
+    const staged = spawnSync('git', ['show', ':' + path], { cwd, encoding: 'utf8' })
+    if (staged.status !== 0) throw new Error(`Could not read staged shell script ${path}: ${staged.stderr}`)
+    const checked = spawnSync('shellcheck', ['--filename', path, '-'], { cwd, input: staged.stdout, encoding: 'utf8' })
+    if (checked.error) throw checked.error
+    if (checked.status !== 0) throw new Error(`ShellCheck failed for staged ${path}: ${checked.stdout} ${checked.stderr}`)
+  }
+}
 function hygiene(ids: string[], cwd: string): void {
   const selected = new Set(ids.length ? ids : readHygieneSelection(cwd))
   for (const id of selected) {
-    if (id === 'git-diff') exec('git', ['diff', '--cached', '--check'], { cwd })
+    if (id === 'shellcheck') stagedShellcheck(cwd)
+    else if (id === 'git-diff') exec('git', ['diff', '--cached', '--check'], { cwd })
     else if (id === 'gitleaks') exec('gitleaks', ['git', '--pre-commit', '--staged', '--redact'], { cwd })
     else if (id === 'large-files') stagedLargeFiles(cwd)
     else if (id === 'dependency-audit') exec('npm', ['audit', '--audit-level=high'], { cwd })
@@ -166,12 +172,18 @@ function main(): void {
     const executable = toolId(id)
     const found = locate(executable, prefix)
     console.log(JSON.stringify({ capability: id, executable, status: found ? 'installed' : 'missing', path: found ?? null, managed: Boolean(readLedger()[executable]) }))
+  } else if (action === 'find' && id) {
+    const executable = toolId(id)
+    const explicit = rest[0]
+    const result = findTool(executable, { explicit, prefix, cwd: process.cwd(), toolDirectories: configuredToolDirectories() })
+    console.log(JSON.stringify({ capability: id, executable, ...result }))
+    if (result.status !== 'installed') process.exitCode = 1
   } else if (action === 'install' && id) install(id, prefix)
   else if (action === 'uninstall' && id) uninstall(id)
   else if (action === 'hooks' && id === 'install') installHook(process.cwd())
   else if (action === 'hygiene') hygiene([id, ...rest].filter(Boolean).filter(x => x !== '--prefix'), process.cwd())
   else {
-    console.log('Usage: acc-tools list | status <capability> | install <capability> [--prefix DIR] | uninstall <capability> | hooks install | hygiene [check...]')
+    console.log('Usage: acc-tools list | status <capability> | find <capability> [absolute-executable-path] | install <capability> [--prefix DIR] | uninstall <capability> | hooks install | hygiene [check...]')
     process.exitCode = 2
   }
 }

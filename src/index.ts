@@ -13,6 +13,7 @@ import { dirname, isAbsolute, relative, resolve, parse } from 'node:path'
 import { existsSync } from 'node:fs'
 import { capabilityEnabled, languageForExtension } from './capabilities.js'
 import { registerAccCommands } from './commands.js'
+import { configuredToolDirectories, findTool } from './discovery.js'
 import type { Language } from './capabilities.js'
 import * as nativeLspStdio from '@deepseek-ai/dsh-lsp-stdio'
 import * as lspActions from 'dsh-lsp-actions'
@@ -264,7 +265,7 @@ export function apply(ctx: Context, config: Config): void {
     ]
     for (const item of requested) {
       if (!config.languages[item.language] || !config.languageServers[item.language] || config.capabilities[item.id] === false) continue
-      const command = config.executables[item.command] ?? item.command
+      const command = findTool(item.command, { explicit: config.executables[item.command], prefix: process.env.ACC_TOOL_ROOT, toolDirectories: configuredToolDirectories() }).path ?? (config.executables[item.command] ?? item.command)
       try {
         await scoped.subprocess.resolveExecutable(command)
         entries[item.language] = { command, args: item.args, extensionToLanguage: Object.fromEntries(Object.entries(item.mapping).filter(([, v]) => typeof v === 'string')) as Record<string, string> }
@@ -291,7 +292,7 @@ export function apply(ctx: Context, config: Config): void {
       { language: 'typescript' as const, id: 'typescript-lsp', command: 'typescript-language-server', args: ['--stdio'], mapping: { '.ts': 'typescript', '.tsx': 'typescriptreact' }, markers: ['tsconfig.json', 'package.json'] },
     ]) {
       if (!config.languages[option.language] || !config.languageServers[option.language] || config.capabilities[option.id] === false) continue
-      const command = config.executables[option.command] ?? option.command
+      const command = findTool(option.command, { explicit: config.executables[option.command], prefix: process.env.ACC_TOOL_ROOT, toolDirectories: configuredToolDirectories() }).path ?? (config.executables[option.command] ?? option.command)
       try {
         await scoped.subprocess.resolveExecutable(command)
         entries[option.language] = { command, args: option.args, extensionToLanguage: Object.fromEntries(Object.entries(option.mapping).filter(([, v]) => typeof v === 'string')) as Record<string, string>, projectMarkers: option.markers }
@@ -361,7 +362,7 @@ export function apply(ctx: Context, config: Config): void {
     const requested = argv[0] as string
     const localExecutable = resolve(cwd, 'node_modules', '.bin', requested)
     // Respect a user-specified executable first, then project dependencies, then PATH.
-    argv[0] = config.executables[requested] ?? (existsSync(localExecutable) ? localExecutable : requested)
+    argv[0] = findTool(requested, { explicit: config.executables[requested], prefix: process.env.ACC_TOOL_ROOT, cwd, toolDirectories: configuredToolDirectories() }).path ?? (config.executables[requested] ?? (existsSync(localExecutable) ? localExecutable : requested))
 
     let executable: string
     try {
