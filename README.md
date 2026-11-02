@@ -22,7 +22,7 @@ A native DeepSeek Harness Cordis plugin that reuses existing language tools and 
 
 ## Correct code with the tools you already have
 
-ACC runs after supported, successful DeepSeek Harness file edits, applies configured fixers, runs read-only checks, and returns remaining diagnostics to the agent. Tool discovery and language settings are managed through native DSH capabilities. ACC is derived from the MIT-licensed [dsh-lens-lite](https://github.com/ben7am1n/dsh-lens-lite), with its upstream attribution preserved.
+ACC runs after supported, successful DeepSeek Harness file edits, applies configured fixers, runs read-only checks, and returns remaining diagnostics to the agent. Tool discovery and language settings are managed through native DSH capabilities.
 
 ## What you need
 
@@ -59,6 +59,7 @@ A passing `pnpm run verify` is a repository check; it is **not** proof of succes
 | How do I install, operate, and recover it? | [Runbook](RUNBOOK.md) |
 | Which versions, dependencies, and commands are declared? | [Package manifest](package.json) |
 | How do I contribute? | [Contributing](CONTRIBUTING.md) |
+| What is the original project and license? | [dsh-lens-lite](https://github.com/ben7am1n/dsh-lens-lite) · [MIT license](LICENSE) |
 
 ## License and attribution
 
