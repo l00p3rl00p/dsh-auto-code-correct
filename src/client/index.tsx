@@ -1,11 +1,11 @@
 /** Native DSH ConfigForms settings companion for ACC. */
-import React, { useState, useSyncExternalStore } from 'react'
+import React, { useState } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
-import type {} from '@deepseek-ai/dsh-client-ui-settings-plugins/client'
+import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
-import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { ConfigPageForm, PluginConfigViewProps } from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import { CAPABILITIES } from '../capabilities.js'
 import type { Language } from '../capabilities.js'
 
@@ -18,24 +18,20 @@ type Settings = {
 }
 const FALLBACK: Record<Language, boolean> = { python: true, rust: false, typescript: false }
 const LABELS: Record<Language, string> = { python: 'Python', rust: 'Rust', typescript: 'TypeScript' }
-let form: ConfigForm<Settings> | undefined
 
 export const inject = ['slots', 'configForms']
 export const name = 'auto-code-correct-settings'
 
-function PluginPage(): React.JSX.Element {
-  const scope = form
-  if (!scope) return <div>ACC settings are not available.</div>
-  return <ConfigPage scope={scope} />
+function PluginPage({ view, form }: PluginConfigViewProps): React.JSX.Element {
+  if (view === 'summary') return <p>Language gates, autofix, verification, and Git hygiene.</p>
+  if (!form) return <p>ACC configuration is not available for this plugin entry.</p>
+  return <ConfigPage form={form} />
 }
-function ConfigPage({ scope }: { scope: ConfigForm<Settings> }): React.JSX.Element {
-  const snapshot = useSyncExternalStore(
-    (listener) => scope.subscribe(listener),
-    () => scope.getSnapshot(),
-  )
+function ConfigPage({ form }: { form: ConfigPageForm }): React.JSX.Element {
+  const snapshot = form.state
   const [working, setWorking] = useState<string | null>(null)
   const [error, setError] = useState('')
-  const value = snapshot.value ?? {}
+  const value = (snapshot.value ?? {}) as Settings
   const languages = { ...FALLBACK, ...value.languages }
   const capabilities = value.capabilities ?? {}
   const servers = value.languageServers ?? FALLBACK
@@ -46,7 +42,7 @@ function ConfigPage({ scope }: { scope: ConfigForm<Settings> }): React.JSX.Eleme
     setWorking(id)
     setError('')
     try {
-      await scope.mutate([{ op: 'set', path, value: next }], scope.getSnapshot().revision)
+      await form.mutate([{ op: 'set', path, value: next }], snapshot.revision)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -101,15 +97,11 @@ function ConfigPage({ scope }: { scope: ConfigForm<Settings> }): React.JSX.Eleme
   </main>
 }
 export function apply(ctx: Context): void {
-  const scope = ctx.configForms.get<Settings>('auto-code-correct')
-  ctx.slots.inject('settings.plugins.tab', () => {
-    form = scope
-    const dispose = ctx.slots.register({
-      name: 'settings.plugins.tab',
+  ctx.effect(() => ctx.configForms.whileServed(['auto-code-correct'], () =>
+    ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
+      name: 'plugins.bundle.config',
+      key: 'dsh-auto-code-correct',
       id: 'auto-code-correct',
-      order: 30,
-      label: () => 'Auto Code Correct',
-    }, PluginPage)
-    return () => { dispose(); form = undefined }
-  })
+    }, PluginPage))
+  ), 'auto-code-correct: plugin detail configuration')
 }

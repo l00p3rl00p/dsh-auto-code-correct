@@ -48,10 +48,10 @@
       "inject": [
         "@deepseek-ai/dsh-client-ui-slots",
         "@deepseek-ai/dsh-client-ui-settings",
-        "@deepseek-ai/dsh-client-ui-settings-plugins",
         "@deepseek-ai/dsh-client-ui-renderer",
         "@deepseek-ai/dsh-api-remotes",
-        "@deepseek-ai/dsh-client-ui-session"
+        "@deepseek-ai/dsh-client-ui-session",
+        "@deepseek-ai/dsh-client-ui-plugin-manager"
       ],
       "platform": "web"
     }
@@ -115,7 +115,8 @@
     "@deepseek-ai/dsh-user-approval": "0.2.1-rc.5",
     "@deepseek-ai/dsh-working-directory": "0.2.1-rc.5",
     "@deepseek-ai/dsh-attachment": "0.2.1-rc.5",
-    "@deepseek-ai/dsh-config-editor": "0.2.1-rc.5"
+    "@deepseek-ai/dsh-config-editor": "0.2.1-rc.5",
+    "@deepseek-ai/dsh-client-ui-plugin-manager": "0.2.1-rc.5"
   },
   "scripts": {
     "build": "tsdown",

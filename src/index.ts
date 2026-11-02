@@ -18,7 +18,7 @@ import { configuredToolDirectories, findTool } from './discovery.js'
 import type { Language } from './capabilities.js'
 import * as nativeLspStdio from '@deepseek-ai/dsh-lsp-stdio'
 import * as lspActions from 'dsh-lsp-actions'
-import type { Context } from '@deepseek-ai/cordis'
+import type { Context, Volatile } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { MessageSource } from '@deepseek-ai/dsh-llm'
@@ -72,15 +72,15 @@ export interface CheckerConfig {
  */
 export interface Config {
   /** Primary language switches: disabled languages are never evaluated. */
-  languages: Record<Language, boolean>
+  languages: Volatile<Record<Language, boolean>>
   /** Individual named capabilities; false disables one fixer or checker. */
-  capabilities: Record<string, boolean>
+  capabilities: Volatile<Record<string, boolean>>
   /** Native Git pre-commit hygiene runs automatically unless explicitly disabled. */
-  hygieneEnabled: boolean
+  hygieneEnabled: Volatile<boolean>
   /** Language-server capability switches; gated by the corresponding language master. */
-  languageServers: Record<Language, boolean>
+  languageServers: Volatile<Record<Language, boolean>>
   /** Optional absolute or PATH-resolvable command overrides by executable name. */
-  executables: Record<string, string>
+  executables: Volatile<Record<string, string>>
   /** Tool names whose successful results are inspected for an edited file. */
   tools: string[]
   /** Checkers, consulted in order; every checker claiming the extension runs. */
@@ -104,11 +104,11 @@ const CheckerSchema: z<CheckerConfig> = z.object({
 })
 
 export const Config: z<Config> = z.object({
-  languages: z.object({ python: z.boolean().default(true), rust: z.boolean().default(false), typescript: z.boolean().default(false) }).default({ python: true, rust: false, typescript: false }),
-  capabilities: z.dict(z.boolean()).default({}),
-  hygieneEnabled: z.boolean().default(true),
-  languageServers: z.object({ python: z.boolean().default(true), rust: z.boolean().default(true), typescript: z.boolean().default(true) }).default({ python: true, rust: true, typescript: true }),
-  executables: z.dict(z.string()).default({}),
+  languages: z.object({ python: z.boolean().default(true), rust: z.boolean().default(false), typescript: z.boolean().default(false) }).default({ python: true, rust: false, typescript: false }).volatile(),
+  capabilities: z.dict(z.boolean()).default({}).volatile(),
+  hygieneEnabled: z.boolean().default(true).volatile(),
+  languageServers: z.object({ python: z.boolean().default(true), rust: z.boolean().default(true), typescript: z.boolean().default(true) }).default({ python: true, rust: true, typescript: true }).volatile(),
+  executables: z.dict(z.string()).default({}).volatile(),
   tools: z.array(z.string()).default(['write', 'edit', 'str_replace_editor']),
   checkers: z.array(CheckerSchema).default([]),
   fixers: z.array(CheckerSchema).default([]),
@@ -246,7 +246,7 @@ export function apply(ctx: Context, config: Config): void {
   registerAccCommands(ctx)
   validateCheckers([...config.fixers, ...config.checkers])
   const effectiveEnabled = (extension: string, name: string): boolean => {
-    return capabilityEnabled(languageForExtension(extension), name, config.languages, config.capabilities)
+    return capabilityEnabled(languageForExtension(extension), name, config.languages.get(), config.capabilities.get())
   }
   if (!Number.isInteger(config.maxDiagnosticChars) || config.maxDiagnosticChars < 1) {
     throw new Error(`auto-code-correct: invalid maxDiagnosticChars ${config.maxDiagnosticChars} — must be an integer >= 1`)
@@ -268,8 +268,8 @@ export function apply(ctx: Context, config: Config): void {
       { language: 'typescript' as const, id: 'typescript-lsp', command: 'typescript-language-server', args: ['--stdio'], mapping: { '.ts': 'typescript', '.tsx': 'typescriptreact' } },
     ]
     for (const item of requested) {
-      if (!config.languages[item.language] || !config.languageServers[item.language] || config.capabilities[item.id] === false) continue
-      const command = findTool(item.command, { explicit: config.executables[item.command], prefix: process.env.ACC_TOOL_ROOT, toolDirectories: configuredToolDirectories() }).path ?? (config.executables[item.command] ?? item.command)
+      if (!config.languages.get()[item.language] || !config.languageServers.get()[item.language] || config.capabilities.get()[item.id] === false) continue
+      const command = findTool(item.command, { explicit: config.executables.get()[item.command], prefix: process.env.ACC_TOOL_ROOT, toolDirectories: configuredToolDirectories() }).path ?? (config.executables.get()[item.command] ?? item.command)
       try {
         await scoped.subprocess.resolveExecutable(command)
         entries[item.language] = { command, args: item.args, extensionToLanguage: Object.fromEntries(Object.entries(item.mapping).filter(([, v]) => typeof v === 'string')) as Record<string, string> }
@@ -295,8 +295,8 @@ export function apply(ctx: Context, config: Config): void {
       { language: 'rust' as const, id: 'rust-analyzer', command: 'rust-analyzer', args: [], mapping: { '.rs': 'rust' }, markers: ['Cargo.toml'] },
       { language: 'typescript' as const, id: 'typescript-lsp', command: 'typescript-language-server', args: ['--stdio'], mapping: { '.ts': 'typescript', '.tsx': 'typescriptreact' }, markers: ['tsconfig.json', 'package.json'] },
     ]) {
-      if (!config.languages[option.language] || !config.languageServers[option.language] || config.capabilities[option.id] === false) continue
-      const command = findTool(option.command, { explicit: config.executables[option.command], prefix: process.env.ACC_TOOL_ROOT, toolDirectories: configuredToolDirectories() }).path ?? (config.executables[option.command] ?? option.command)
+      if (!config.languages.get()[option.language] || !config.languageServers.get()[option.language] || config.capabilities.get()[option.id] === false) continue
+      const command = findTool(option.command, { explicit: config.executables.get()[option.command], prefix: process.env.ACC_TOOL_ROOT, toolDirectories: configuredToolDirectories() }).path ?? (config.executables.get()[option.command] ?? option.command)
       try {
         await scoped.subprocess.resolveExecutable(command)
         entries[option.language] = { command, args: option.args, extensionToLanguage: Object.fromEntries(Object.entries(option.mapping).filter(([, v]) => typeof v === 'string')) as Record<string, string>, projectMarkers: option.markers }
@@ -308,9 +308,9 @@ export function apply(ctx: Context, config: Config): void {
   })
 
   const hygienePolicy = () => ({
-    enabled: config.hygieneEnabled,
+    enabled: config.hygieneEnabled.get(),
     checks: [...DEFAULT_HYGIENE, 'large-files', 'dependency-audit', 'license-audit', 'history-secrets']
-      .filter(id => config.capabilities[id] === true || (config.capabilities[id] !== false && DEFAULT_HYGIENE.some(value => value === id))),
+      .filter(id => config.capabilities.get()[id] === true || (config.capabilities.get()[id] !== false && DEFAULT_HYGIENE.some(value => value === id))),
   })
   // Install the repository-local Git pre-commit integration on plugin activation
   // when the Harness starts inside a repository, then for each edited repository.
@@ -376,7 +376,7 @@ export function apply(ctx: Context, config: Config): void {
     const requested = argv[0] as string
     const localExecutable = resolve(cwd, 'node_modules', '.bin', requested)
     // Respect a user-specified executable first, then project dependencies, then PATH.
-    argv[0] = findTool(requested, { explicit: config.executables[requested], prefix: process.env.ACC_TOOL_ROOT, cwd, toolDirectories: configuredToolDirectories() }).path ?? (config.executables[requested] ?? (existsSync(localExecutable) ? localExecutable : requested))
+    argv[0] = findTool(requested, { explicit: config.executables.get()[requested], prefix: process.env.ACC_TOOL_ROOT, cwd, toolDirectories: configuredToolDirectories() }).path ?? (config.executables.get()[requested] ?? (existsSync(localExecutable) ? localExecutable : requested))
 
     let executable: string
     try {
@@ -429,7 +429,7 @@ export function apply(ctx: Context, config: Config): void {
     const absolute = isAbsolute(filePath) ? filePath : resolve(filePath)
     const ext = extensionOf(absolute)
     const language = languageForExtension(ext)
-    if (!language || !config.languages[language]) return undefined
+    if (!language || !config.languages.get()[language]) return undefined
     const fixers = (fixersByExtension.get(ext) ?? []).filter(item => effectiveEnabled(ext, item.name))
     const checkers = (byExtension.get(ext) ?? []).filter(item => effectiveEnabled(ext, item.name))
     if (!fixers.length && !checkers.length) return undefined
