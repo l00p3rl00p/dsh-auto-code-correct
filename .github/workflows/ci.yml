@@ -9,10 +9,10 @@ jobs:
     env:
       ACC_QDOCKER_READ_TOKEN: ${{ secrets.ACC_QDOCKER_READ_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Read authoritative Docker code-and-quality installer
         if: env.ACC_QDOCKER_READ_TOKEN != ''
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: l00p3rl00p/qdocker-compose
           token: ${{ env.ACC_QDOCKER_READ_TOKEN }}
@@ -24,7 +24,7 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 10
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '24'
       - name: Install dependencies
@@ -67,7 +67,7 @@ jobs:
         env:
           DSH_HOME: ${{ runner.temp }}/acc-dsh-home
         run: |
-          pnpm dlx --package=@deepseek-ai/dsh@0.2.1-rc.5 dsh plugin --profile acc-ci add ./dist/dsh-auto-code-correct-0.1.0.tgz
+          pnpm dlx --package=@deepseek-ai/dsh@0.2.1-rc.5 dsh plugin --profile acc-ci add @deepseek-ai/dsh-lsp@0.2.1-rc.5 @deepseek-ai/dsh-lsp-stdio@0.2.1-rc.5 ./dist/dsh-auto-code-correct-0.1.0.tgz
           pnpm dlx --package=@deepseek-ai/dsh@0.2.1-rc.5 dsh --profile acc-ci --dump-config | grep -q auto-code-correct
       - name: Publish installable plugin artifact
         uses: actions/upload-artifact@v4

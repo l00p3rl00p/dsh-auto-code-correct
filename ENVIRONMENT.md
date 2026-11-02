@@ -69,6 +69,12 @@ export ACC_TOOL_PATHS=/path/to/existing/tools/bin
 
 
 
+## Native LSP package dependency chain
+
+ACC imports `@deepseek-ai/dsh-lsp-stdio` at module load. That provider imports `@deepseek-ai/dsh-lsp`. **Both** are external DSH peer dependencies, so compiling ACC or installing only `dsh-lsp-stdio` does not prove that ACC can load. The active DSH profile must resolve both at a mutually compatible version, using the DSH runtime's selected version as the authority. QDev's `stacks/harness/start-harness.sh` installs/repairs those profile dependencies *before* starting Web, preserving saved profile credentials and application state.
+
+Check an installed profile by importing the packaged ACC plugin from the same profile module-resolution context; merely checking the `package.json` versions is insufficient. Independent development-only versions in ACC's `devDependencies` support verification and are not independent deployment pins. The exact compatibility contract lives in `peerDependencies`.
+
 ## Harness and host separation
 
 ACC must run within the existing DSH plugin lifecycle; it should not create a standalone Harness, overwrite the QDev Code-and-Quality tool volume, or add Docker services merely to make a language tool available. Use the existing executable path or `ACC_TOOL_PATHS`; record profile-specific overrides through DSH's native config mechanism. Ensure any path used in Docker resolves **inside** the Harness container, not just on the Mac host.

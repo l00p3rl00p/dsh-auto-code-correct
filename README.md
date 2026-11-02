@@ -46,6 +46,8 @@ dsh plugin --profile web add ./dist/dsh-auto-code-correct-0.1.0.tgz
 dsh --profile web --dump-config
 ```
 
+ACC uses DeepSeek's native LSP foundation. Its two peer packages, `@deepseek-ai/dsh-lsp` and `@deepseek-ai/dsh-lsp-stdio`, must be resolvable from the active DSH profile **before the Web server starts**. Install them together with ACC at versions compatible with the selected DSH runtime. In QDev Docker, the [QDev-owned installer](https://github.com/l00p3rl00p/qdocker-compose/blob/main/stacks/harness/start-harness.sh) manages this automatically. These are native library dependencies, not additional language-server executables or containers.
+
 In a DSH chat, run `/acc status <capability-id>` to check a tool. Use `/acc link <capability-id> /absolute/path/to/executable` to point to an existing executable rather than reinstalling it. For a Docker deployment, inspect [ENVIRONMENT.md](ENVIRONMENT.md) before installation.
 
 A passing `pnpm run verify` is a repository check; it is **not** proof of successful installation or operation in a live DSH session. See the [Runbook](RUNBOOK.md) for verification and troubleshooting.
