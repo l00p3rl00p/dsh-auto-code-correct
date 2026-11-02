@@ -73,7 +73,7 @@ export ACC_TOOL_PATHS=/path/to/existing/tools/bin
 
 ACC imports `@deepseek-ai/dsh-lsp-stdio` at module load. That provider imports `@deepseek-ai/dsh-lsp`. **Both** are external DSH peer dependencies, so compiling ACC or installing only `dsh-lsp-stdio` does not prove that ACC can load. The active DSH profile must resolve both at a mutually compatible version, using the DSH runtime's selected version as the authority. QDev's `stacks/harness/start-harness.sh` installs/repairs those profile dependencies *before* starting Web, preserving saved profile credentials and application state.
 
-Check an installed profile by importing the packaged ACC plugin from the same profile module-resolution context; merely checking the `package.json` versions is insufficient. Independent development-only versions in ACC's `devDependencies` support verification and are not independent deployment pins. The exact compatibility contract lives in `peerDependencies`.
+Check runtime loading **after DSH starts its native profile resolver**: it supplies installation-owned runtime packages (including `@deepseek-ai/cordis`) that a standalone pre-boot import cannot resolve. Inspect the real DSH startup diagnostics for plugin import errors; merely checking `package.json` versions is insufficient. Independent development-only versions in ACC's `devDependencies` support verification and are not independent deployment pins. The exact compatibility contract lives in `peerDependencies`.
 
 ## Harness and host separation
 
