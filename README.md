@@ -59,7 +59,7 @@ A passing `pnpm run verify` is a repository check; it is **not** proof of succes
 | How do I install, operate, and recover it? | [Runbook](RUNBOOK.md) |
 | Which versions, dependencies, and commands are declared? | [Package manifest](package.json) |
 | How do I contribute? | [Contributing](CONTRIBUTING.md) |
-| What is the original project and license? | [dsh-lens-lite](https://github.com/ben7am1n/dsh-lens-lite) · [MIT license](LICENSE) |
+| What is the original project and license? | [Attribution](ATTRIBUTION.md) · [MIT license](LICENSE) |
 
 ## License and attribution
 
