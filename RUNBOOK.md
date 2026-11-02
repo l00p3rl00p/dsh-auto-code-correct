@@ -24,6 +24,12 @@ dsh --profile web --dump-config
 For a GitHub source installation, the package's `prepare` script builds the plugin. pnpm 10 may require explicit permission for this package's build script in the profile's `pnpm-workspace.yaml` (`allowBuilds: { dsh-auto-code-correct: true }`). Prefer the prebuilt tarball if build permission is unwanted. Only install from trusted, pinned sources.
 
 
+## Native DSH dependency repair (before first Web launch)
+
+- The ACC entry point loads `@deepseek-ai/dsh-lsp-stdio`, which itself loads `@deepseek-ai/dsh-lsp`. Both must resolve as native profile packages. Install these together in the target profile with `dsh plugin --profile <profile> add`, taking their matching version from the installed DSH release. Do not hardcode an extra independent rc pin or grant an exact-version compatibility exemption.
+- In QDev, the Docker-owned startup script handles the native LSP package pair and ACC before running `dsh web`. It preserves `$DSH_HOME` and avoids starting the server temporarily just to install plugins. The ACC repository does not duplicate QDev's Docker installation logic.
+- Acceptance is a real import of the packaged ACC module with its nested LSP provider, then the native profile startup with no missing-package exception. An ordinary `pnpm run build` and package-name checks are not proof of a successful runtime import.
+
 ## Operator procedure
 
 1. Confirm the intended DSH profile and access to existing language tools (`/acc status <capability-id>`).
