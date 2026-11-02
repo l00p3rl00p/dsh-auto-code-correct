@@ -28,7 +28,7 @@ For a GitHub source installation, the package's `prepare` script builds the plug
 
 - The ACC entry point loads `@deepseek-ai/dsh-lsp-stdio`, which itself loads `@deepseek-ai/dsh-lsp`. Both must resolve as native profile packages. Install these together in the target profile with `dsh plugin --profile <profile> add`, taking their matching version from the installed DSH release. Do not hardcode an extra independent rc pin or grant an exact-version compatibility exemption.
 - In QDev, the Docker-owned startup script handles the native LSP package pair and ACC before running `dsh web`. It preserves `$DSH_HOME` and avoids starting the server temporarily just to install plugins. The ACC repository does not duplicate QDev's Docker installation logic.
-- Acceptance is a real import of the packaged ACC module with its nested LSP provider, then the native profile startup with no missing-package exception. An ordinary `pnpm run build` and package-name checks are not proof of a successful runtime import.
+- Acceptance is a real native DSH startup with ACC loading successfully and no missing-package exception. Do not separately import ACC *before* DSH boots: DSH's profile resolver first supplies the installation-owned peers (such as `@deepseek-ai/cordis`). An ordinary `pnpm run build` and package-name checks are not proof of correct runtime loading.
 
 ## Operator procedure
 
