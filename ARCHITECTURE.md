@@ -132,13 +132,13 @@ The current code runs verification even after a mutating fixer fails, and return
 - `package.json`: packaged plugin, dependencies, build and verification commands.
 - `.github/workflows/ci.yml`: actual CI definition.
 
-## Moved from README: Documentation authority
+## Documentation authority
 
 - **Authoritative executable configuration, not another Markdown document:** [package.json](package.json) (scripts, versions, dependencies, bundle manifest), [cordis.patch.yml](cordis.patch.yml) (native Cordis registration/default settings), and source code under `src/`. If prose disagrees with actual configuration or source, correct the prose; do not introduce a parallel version matrix.
 
 Do not create new Markdown files for routine decisions or experiments: revise the correct existing authority. Preserve older experimental `hooks.json` and `check.sh` as legacy only; they are not installation interfaces.
 
-## Moved from README: Behavior at a glance
+## Behavior at a glance
 
 ## Behavior at a glance
 
