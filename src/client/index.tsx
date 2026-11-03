@@ -101,7 +101,6 @@ export function apply(ctx: Context): void {
     ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
       name: 'plugins.bundle.config',
       key: 'dsh-auto-code-correct',
-      id: 'auto-code-correct',
     }, PluginPage))
   ), 'auto-code-correct: plugin detail configuration')
 }
