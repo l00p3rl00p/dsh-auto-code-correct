@@ -24,6 +24,12 @@ dsh --profile web --dump-config
 For a GitHub source installation, the package's `prepare` script builds the plugin. pnpm 10 may require explicit permission for this package's build script in the profile's `pnpm-workspace.yaml` (`allowBuilds: { dsh-auto-code-correct: true }`). Prefer the prebuilt tarball if build permission is unwanted. Only install from trusted, pinned sources.
 
 
+## Completion and verification boundaries
+
+This is the operational contract for the standalone ACC programming plugin. The separate SOUP drift plugin is documented in [Quatrus Scratchpad](https://github.com/l00p3rl00p/quatrus-scratchpad/tree/main/plugins/qdev-soup-drift). Neither plugin requires the other, and model choice (local or frontier) is an independent DSH configuration decision. Keep source/package changes and their corresponding README, architecture, environment, and runbook instructions synchronized **within this repository**. Do not mirror ACC implementation into Scratchpad.
+
+The operator must confirm three independent outcomes: native Host registration, browser-side plugin settings that actually mount and persist, and actual ACC execution on a disposable edit (plus a separate Git hook check). A missing settings window is a real product defect, not a successful install. The tests below are the acceptance procedure, not a claim that a particular user's live Harness has already passed.
+
 ## Installing without GitHub inside Docker
 
 If the checkout is already mounted into DSH, build and install **locally**, without asking the Harness container to authenticate to GitHub:
