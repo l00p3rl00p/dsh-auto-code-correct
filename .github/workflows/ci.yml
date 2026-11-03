@@ -47,6 +47,8 @@ jobs:
         run: pnpm test
       - name: Build
         run: pnpm run build
+      - name: Validate native DSH package contract
+        run: pnpm run check:package
       - name: Package installable DSH plugin
         run: |
           mkdir -p dist
