@@ -29,13 +29,29 @@ ACC runs after supported, successful DeepSeek Harness file edits, applies config
 | | Requirement | Purpose |
 | --- | --- | --- |
 | **Required** | DeepSeek Harness | Compatible DSH version as declared in [package.json](package.json) |
-| **Required** | Node.js and pnpm | Build, verify, and package the plugin; see the [Node engine range](package.json) |
+| **Developer builds only** | Node.js and pnpm | Needed when building from source, not for Web UI installation |
 | **As enabled** | Language quality tools | Reuse available linters, formatters, and language servers |
 | **Not required** | Separate Docker service | ACC is a native plugin, not an independent service |
 
 ## Getting started
 
-Use an existing compatible DSH profile:
+In **DeepSeek Harness → Plugins → Installed → Add plugin**, enter this GitHub source (keep the **Official npm registry** selected for dependencies):
+
+```text
+github:l00p3rl00p/dsh-auto-code-correct
+```
+
+Choose **Install**, then **Enable now**. No manual Git clone, pnpm build, or tarball download is required. The native DSH installer fetches the Git source and manages the profile package; a build-script approval may be requested.
+
+**To update:** Remove the existing `dsh-auto-code-correct` plugin in **Plugins → Installed**, then install the same GitHub source again. This avoids the native installer's ambiguous-dependency error when pnpm reports an unchanged lockfile. Confirm the plugin has been removed before reinstalling; do not manually delete profile files.
+
+**Settings:** Open **Plugins → Installed → dsh-auto-code-correct** and use its bundle detail configuration page. The ACC panels belong there, not under **Settings → Built-in plugins**. Settings are saved to the active DSH profile; changes may need a DSH restart if hot reload is disabled.
+
+**Restart after installation:** Restart the **DSH Web process** to load the new Host and client bundle. A whole Docker image rebuild is unnecessary. Restarting the Harness container is an alternative when that container owns the DSH Web process; no other QDev containers need restarting.
+
+### Build from source (developers only)
+
+From an existing checkout, run:
 
 ```sh
 pnpm install --no-frozen-lockfile
@@ -69,7 +85,3 @@ MIT; original attribution to [dsh-lens-lite](https://github.com/ben7am1n/dsh-len
 
 <div align="center"><sub>ACC · Native DeepSeek Harness code correction and verification</sub></div>
 
-
-### Native plugin configuration (Web)
-
-Open **Plugins → Installed → dsh-auto-code-correct**. ACC registers its form on the bundle detail page through native `plugins.bundle.config`, not Settings → Built-in plugins. Host Config marks languages, capabilities, language servers, hygiene and executable overrides as volatile; ConfigForms only exposes volatile fields. The form saves to the active profile patch using revision checks. Host forms require a loopback Web origin. Check persistence by toggling Python, restarting the Harness and confirming the saved value.
