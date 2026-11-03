@@ -68,3 +68,8 @@ A passing `pnpm run verify` is a repository check; it is **not** proof of succes
 MIT; original attribution to [dsh-lens-lite](https://github.com/ben7am1n/dsh-lens-lite) is preserved. See [LICENSE](LICENSE) and the upstream project for original copyright and license terms.
 
 <div align="center"><sub>ACC · Native DeepSeek Harness code correction and verification</sub></div>
+
+
+### Native plugin configuration (Web)
+
+Open **Plugins → Installed → dsh-auto-code-correct**. ACC registers its form on the bundle detail page through native `plugins.bundle.config`, not Settings → Built-in plugins. Host Config marks languages, capabilities, language servers, hygiene and executable overrides as volatile; ConfigForms only exposes volatile fields. The form saves to the active profile patch using revision checks. Host forms require a loopback Web origin. Check persistence by toggling Python, restarting the Harness and confirming the saved value.
