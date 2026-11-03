@@ -73,6 +73,12 @@ This method requires that the Git transport used by pnpm can access the reposito
 
 Use `/acc status <capability-id>` in DSH to inspect an available tool and `/acc link <capability-id> /absolute/path/to/executable` to select an already-installed executable. Do not install a duplicate tool unnecessarily. pnpm store warnings alone do not indicate an installation failure; peer-dependency warnings require inspection in the target DSH profile.
 
+## Plugin completion contract
+
+ACC is the **programming/linting plugin**. Its authoritative source, package, user documentation and release checks live in **this repository**. [Quatrus Scratchpad](https://github.com/l00p3rl00p/quatrus-scratchpad) owns the separate **SOUP trajectory-drift plugin** and its historical experiments; SOUP is not a dependency of ACC. Both plugins run within DSH and can use whichever compatible model endpoint the Harness is configured to use, including local inference. ACC does not require a training platform, a frontier model, or a dedicated Docker service.
+
+Before declaring ACC production-ready, reconcile code, manifest, native host entry, browser settings client, README, [architecture](ARCHITECTURE.md), [environment](ENVIRONMENT.md), and [runbook](RUNBOOK.md). The complete user-facing contract is: install in the intended DSH profile; appear in Plugins; open the native settings page; persist toggles; apply enabled corrections to a real disposable edit; report diagnostics back to the agent; and exercise Git hygiene separately. CI and packed-package import tests prove packaging, **not** Web settings mounting or live agent behavior. Missing pieces remain explicit rather than silently treated as finished. Prefer native DSH plugin/UI seams; any new custom integration requires an audit and human approval.
+
 ## Project reference
 
 | Question | Authoritative source |
