@@ -69,6 +69,12 @@ export ACC_TOOL_PATHS=/path/to/existing/tools/bin
 
 
 
+## Host plugin versus Web client plugin
+
+ACC has **two distinct deliverables** in one DSH package: the host plugin (`lib/index.js`) and the Web settings client (`lib/client.js`). The client is declared in `package.json` under `dsh.client` and built from `src/client/index.tsx`. It registers the DSH-native `plugins.bundle.config` UI slot and uses ConfigForms for the active Cordis entry. The UI is expected under **Plugins → Installed → dsh-auto-code-correct**, not in a standalone Docker window or the general built-in settings.
+
+Check both surfaces independently: `dsh --profile web --dump-config` for host configuration and the actual DSH Web plugin detail page for the client. A missing UI is a client injection/registration/loader failure, not proof that the host entry is absent. A visible UI is not proof that ACC's post-edit and Git hygiene actions fire. Follow [RUNBOOK.md](RUNBOOK.md#prove-the-acc-settings-window-is-present) for the full acceptance procedure.
+
 ## Native LSP package dependency chain
 
 ACC imports `@deepseek-ai/dsh-lsp-stdio` at module load. That provider imports `@deepseek-ai/dsh-lsp`. **Both** are external DSH peer dependencies, so compiling ACC or installing only `dsh-lsp-stdio` does not prove that ACC can load. The active DSH profile must resolve both at a mutually compatible version, using the DSH runtime's selected version as the authority. QDev's `stacks/harness/start-harness.sh` installs/repairs those profile dependencies *before* starting Web, preserving saved profile credentials and application state.
