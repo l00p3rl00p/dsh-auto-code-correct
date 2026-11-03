@@ -24,6 +24,30 @@ dsh --profile web --dump-config
 For a GitHub source installation, the package's `prepare` script builds the plugin. pnpm 10 may require explicit permission for this package's build script in the profile's `pnpm-workspace.yaml` (`allowBuilds: { dsh-auto-code-correct: true }`). Prefer the prebuilt tarball if build permission is unwanted. Only install from trusted, pinned sources.
 
 
+## Installing without GitHub inside Docker
+
+If the checkout is already mounted into DSH, build and install **locally**, without asking the Harness container to authenticate to GitHub:
+
+```sh
+cd /path/to/dsh-auto-code-correct
+pnpm install --no-frozen-lockfile
+pnpm run verify
+mkdir -p dist
+pnpm pack --pack-destination dist
+dsh plugin --profile web add ./dist/dsh-auto-code-correct-0.1.0.tgz
+dsh --profile web --dump-config
+```
+
+The path must resolve **inside** the running container. ACC's verified local artifact is the tarball because its multi-entrypoint package contains the Host plugin, a separately bundled Web settings client, CLI, and Cordis patch. This workflow does not require GitHub authentication or SSH rewrites. The QDev-owned startup process remains responsible for ACC's native DSH LSP peer dependencies.
+
+### Prove the ACC settings window is present
+
+After restarting the DSH Web process, open its token-bearing URL (ordinarily http://localhost:3080). Go to **Plugins → Installed → dsh-auto-code-correct** and open the bundle configuration. The client code in `src/client/index.tsx` registers a native `plugins.bundle.config` slot and exposes language toggles, capability controls and Git hygiene. The build includes `lib/client.js`; the package includes `dsh.client.inject` and `dsh.client.platform: web`.
+
+**Acceptance:** the ACC plugin detail renders its configuration page, settings can be changed through native ConfigForms, and the saved value remains after a Web restart. A packaged `lib/client.js` file is not proof that the page was mounted: examine DSH Web client errors and the plugin's client-bundle loader if the page is missing. A plugin appearing in `--dump-config` proves native configuration registration only; it is not a Web UI activation test.
+
+To prove that ACC actually performs its work, run the independent post-edit and Git-hook acceptance tests below in a disposable project. Do not treat a visible settings page as proof that the post-edit pipeline fires.
+
 ## Native DSH dependency repair (before first Web launch)
 
 - The ACC entry point loads `@deepseek-ai/dsh-lsp-stdio`, which itself loads `@deepseek-ai/dsh-lsp`. Both must resolve as native profile packages. Install these together in the target profile with `dsh plugin --profile <profile> add`, taking their matching version from the installed DSH release. Do not hardcode an extra independent rc pin or grant an exact-version compatibility exemption.
