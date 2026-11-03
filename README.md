@@ -35,25 +35,12 @@ ACC runs after supported, successful DeepSeek Harness file edits, applies config
 
 ## Getting started
 
-In **DeepSeek Harness → Plugins → Installed → Add plugin**, enter this GitHub source (keep the **Official npm registry** selected for dependencies):
+### Local package installation — QDev Docker
 
-```text
-github:l00p3rl00p/dsh-auto-code-correct
-```
-
-Choose **Install**, then **Enable now**. No manual Git clone, pnpm build, or tarball download is required. The native DSH installer fetches the Git source and manages the profile package; a build-script approval may be requested.
-
-**To update:** Remove the existing `dsh-auto-code-correct` plugin in **Plugins → Installed**, then install the same GitHub source again. This avoids the native installer's ambiguous-dependency error when pnpm reports an unchanged lockfile. Confirm the plugin has been removed before reinstalling; do not manually delete profile files.
-
-**Settings:** Open **Plugins → Installed → dsh-auto-code-correct** and use its bundle detail configuration page. The ACC panels belong there, not under **Settings → Built-in plugins**. Settings are saved to the active DSH profile; changes may need a DSH restart if hot reload is disabled.
-
-**Restart after installation:** Restart the **DSH Web process** to load the new Host and client bundle. A whole Docker image rebuild is unnecessary. Restarting the Harness container is an alternative when that container owns the DSH Web process; no other QDev containers need restarting.
-
-### Build from source (developers only)
-
-From an existing checkout, run:
+When the repository is available on the container filesystem, **GitHub authentication is not required inside the Harness container**. Build and install ACC from its local checkout:
 
 ```sh
+cd /path/to/dsh-auto-code-correct
 pnpm install --no-frozen-lockfile
 pnpm run verify
 mkdir -p dist
@@ -62,11 +49,29 @@ dsh plugin --profile web add ./dist/dsh-auto-code-correct-0.1.0.tgz
 dsh --profile web --dump-config
 ```
 
-ACC's native packaging contract is checked by `pnpm run check:package`, and CI verifies the packed artifact installs into a fresh DSH profile. Peer warnings in an existing DSH profile must be diagnosed separately; they are not fixed by adding all reported packages to the plugin manifest.\n\nACC uses DeepSeek's native LSP foundation. Its two peer packages, `@deepseek-ai/dsh-lsp` and `@deepseek-ai/dsh-lsp-stdio`, must be resolvable from the active DSH profile **before the Web server starts**. Install them together with ACC at versions compatible with the selected DSH runtime. In QDev Docker, the [QDev-owned installer](https://github.com/l00p3rl00p/qdocker-compose/blob/main/stacks/harness/start-harness.sh) manages this automatically. These are native library dependencies, not additional language-server executables or containers.
+Use the actual container-visible checkout path. The verified distribution is a **built local tarball**, which includes ACC's Host entry, Web settings client, CLI, and Cordis patch. Do not assume a raw directory link has the same packaging/peer behavior as a tarball; SOUP has a separately tested local-directory workflow.
 
-In a DSH chat, run `/acc status <capability-id>` to check a tool. Use `/acc link <capability-id> /absolute/path/to/executable` to point to an existing executable rather than reinstalling it. For a Docker deployment, inspect [ENVIRONMENT.md](ENVIRONMENT.md) before installation.
+**Native profile prerequisites:** ACC needs compatible `@deepseek-ai/dsh-lsp` and `@deepseek-ai/dsh-lsp-stdio` available when DSH Web starts. The QDev [Harness startup script](https://github.com/l00p3rl00p/qdocker-compose/blob/main/stacks/harness/start-harness.sh) owns the environment-specific dependency setup; ACC does not introduce a second installer or Docker service. See [ENVIRONMENT.md](ENVIRONMENT.md#native-lsp-package-dependency-chain).
 
-A passing `pnpm run verify` is a repository check; it is **not** proof of successful installation or operation in a live DSH session. See the [Runbook](RUNBOOK.md) for verification and troubleshooting.
+After installation, restart the **DSH Web process** (or its owning Harness container), not the whole stack. Launch [DSH Web](http://localhost:3080), using its token-bearing start URL where required.
+
+### Alternative: GitHub-source installation
+
+In **DeepSeek Harness → Plugins → Installed → Add plugin**, use:
+
+```text
+github:l00p3rl00p/dsh-auto-code-correct
+```
+
+This method requires that the Git transport used by pnpm can access the repository. If GitHub authentication inside the container is unavailable, use the local-package method rather than adding extra SSH credentials or transports just to install the plugin. Keep the **Official npm registry** for dependencies.
+
+**Settings:** In **Plugins → Installed → dsh-auto-code-correct**, configure **Auto-Correct**, **Language Servers**, and **Code Hygiene**. These are plugin-specific panels, not **Settings → Built-in plugins**; settings belong to the active DSH profile.
+
+### Verify behavior, not just installation
+
+`pnpm run verify` checks source quality, tests, compilation, and the native package contract. CI also verifies packed clean-profile installation. To confirm ACC actually runs in a DSH conversation, enable Python Auto-Correct, edit a disposable `.py` file using DSH's native edit tool, and observe Ruff/ty execution and diagnostics delivered to the agent. Separately test the enabled Git hygiene pre-commit hook in a disposable repository. Detailed expected outcomes and failure diagnostics are in [RUNBOOK.md](RUNBOOK.md#two-independent-event-acceptance-tests).
+
+Use `/acc status <capability-id>` in DSH to inspect an available tool and `/acc link <capability-id> /absolute/path/to/executable` to select an already-installed executable. Do not install a duplicate tool unnecessarily. pnpm store warnings alone do not indicate an installation failure; peer-dependency warnings require inspection in the target DSH profile.
 
 ## Project reference
 
