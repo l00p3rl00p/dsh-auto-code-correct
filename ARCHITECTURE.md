@@ -140,8 +140,6 @@ Do not create new Markdown files for routine decisions or experiments: revise th
 
 ## Behavior at a glance
 
-## Behavior at a glance
-
 ACC has **one plugin with three groups**: **Auto-Correct**, **Language Servers**, and **Code Hygiene**. After an enabled successful code edit it automatically runs the matching Python, Rust or TypeScript correction-and-verification pipeline and surfaces remaining diagnostics to the agent. Language servers use native DSH/LSP extensions and respect on/off switches. Git hygiene runs **at the Git boundary**, not after each edit, and is enabled by default: ACC creates/chains the native pre-commit hook for repositories it edits. Disable it with `hygieneEnabled: false` in the DSH plugin settings.
 
 The complete [implementation contract, architecture diagrams, language matrix and known delivery gaps](ARCHITECTURE.md#implementation-contract--restored-from-acc-design-decisions-2026-11-01) are in `ARCHITECTURE.md`. The [two-event verification procedure](RUNBOOK.md#two-independent-event-acceptance-tests) is in `RUNBOOK.md`; exact setting/file flags are in `ENVIRONMENT.md`. The native DSH profile is the configuration authority; a generated policy in the repository Git directory supplies the same effective toggles to the Git hook. Live Docker/profile-restart verification is still required.
