@@ -103,7 +103,7 @@ const CheckerSchema: z<CheckerConfig> = z.object({
   streams: z.array(z.union(['stdout', 'stderr'] as const)).default(['stdout', 'stderr']),
 })
 
-export const Config = z.object({
+export const Config: z = z.object({
   languages: z.object({ python: z.boolean().default(true), rust: z.boolean().default(false), typescript: z.boolean().default(false) }).default({ python: true, rust: false, typescript: false }).volatile(),
   capabilities: z.dict(z.boolean()).default({}).volatile(),
   hygieneEnabled: z.boolean().default(true).volatile(),
