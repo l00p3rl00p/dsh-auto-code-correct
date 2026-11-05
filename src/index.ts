@@ -29,7 +29,7 @@ import type { Context, Volatile } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { MessageSource } from '@deepseek-ai/dsh-llm'
-import type { UserMessage } from '@deepseek-ai/dsh-session'
+import { appendPluginRecord, type UserMessage } from '@deepseek-ai/dsh-session'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type {
   PostToolDecision,
@@ -753,7 +753,9 @@ export function apply(ctx: Context, config: Config): void {
     // `Session.append` is the supported durable event path. The event is owned
     // by ACC, carries only lossless JSON facts, and leaves the native tool result
     // untouched. Calls outside an Agent context still receive model diagnostics.
-    exec.agent?.session.append('auto-code-correct/operation', metadata)
+    if (exec.agent?.session) {
+      appendPluginRecord(exec.agent.session, 'plugin:auto-code-correct/operation', metadata)
+    }
     return result
   })
 

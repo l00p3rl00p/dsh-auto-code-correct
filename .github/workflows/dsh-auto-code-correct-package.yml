@@ -23,6 +23,8 @@ jobs:
           node-version: "24"
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
+      - name: Apply source formatting
+        run: pnpm run format
       - name: Verify source and package
         run: pnpm run verify
       # verify includes check:package, which audits the compiled browser require() graph.
