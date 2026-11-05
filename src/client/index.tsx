@@ -308,26 +308,41 @@ function ConfigPage({
           </p>
         ) : null}
         {readiness?.tools.map((tool) => {
-          const warning = tool.state === 'unavailable' || tool.state === 'failed'
-          const color = tool.state === 'ready'
-            ? 'var(--dsw-alias-state-success-primary)'
-            : tool.state === 'failed'
-              ? 'var(--dsw-alias-state-error-primary)'
-              : warning ? 'var(--dsw-alias-state-warning-primary)' : 'var(--dsw-alias-label-secondary)'
+          const isWarning = tool.state === 'unavailable' || tool.state === 'failed'
+          const isInfo = tool.state === 'installed' || tool.state === 'configured'
+          const warningColor = 'var(--dsw-alias-state-warning-primary)'
+          const errorColor = 'var(--dsw-alias-state-error-primary)'
+          const successColor = 'var(--dsw-alias-state-success-primary)'
+          const stateColor =
+            tool.state === 'ready'
+              ? successColor
+              : tool.state === 'disabled'
+                ? 'var(--dsw-alias-label-secondary)'
+                : isWarning
+                  ? tool.state === 'failed'
+                    ? errorColor
+                    : warningColor
+                  : 'var(--dsw-alias-label-primary)'
+
           return (
             <div key={tool.id} style={{ ...rowStyle, borderTop: '1px solid var(--dsw-alias-border-l2)' }}>
               <span style={copyStyle}>
                 <span style={labelStyle}>
-                  {tool.state === 'ready' ? '✓ ' : warning ? '⚠ ' : ''}{tool.label}
+                  {tool.state === 'ready' && '✓ '}
+                  {isWarning && '⚠ '}
+                  {tool.state === 'failed' && '✗ '}
+                  {tool.label}
                 </span>
-                <span style={{ ...descriptionStyle, color: warning ? color : undefined }}>
-                  {tool.state === 'unavailable' ? 'Tool not found. Please install or configure path.'
-                    : tool.state === 'failed' ? 'Tool configuration failed. Check settings.'
-                    : tool.detail}
-                  {tool.version ? ' · ' + tool.version : ''}
+                <span style={{ ...descriptionStyle, color: isWarning ? warningColor : undefined }}>
+                  {tool.state === 'unavailable' && '⚠ Tool not found. Please install or configure path.'}
+                  {tool.state === 'failed' && '✗ Tool configuration failed. Check settings.'}
+                  {tool.state !== 'unavailable' && tool.state !== 'failed' && tool.detail}
+                  {tool.version ? ` · ${tool.version}` : ''}
                 </span>
               </span>
-              <strong style={{ ...descriptionStyle, textTransform: 'capitalize', color }}>{tool.state}</strong>
+              <strong style={{ ...descriptionStyle, textTransform: 'capitalize', color: stateColor }}>
+                {tool.state}
+              </strong>
             </div>
           )
         })}
