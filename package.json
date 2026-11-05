@@ -1,6 +1,6 @@
 {
   "name": "dsh-auto-code-correct",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Native DeepSeek Harness Auto Code Correct: language gates, opt-in tool manager, autofix and hygiene",
   "keywords": [
     "dsh",
@@ -138,7 +138,6 @@
     "lint": "eslint src test",
     "formatcheck": "prettier --check 'src/**/*.{ts,tsx}' 'test/**/*.ts'",
     "verify": "pnpm run lint && pnpm run formatcheck && pnpm run typecheck && pnpm test && pnpm run build && pnpm run check:package",
-    "prepare": "pnpm run build",
     "packcheck": "pnpm run build && mkdir -p dist && pnpm pack --pack-destination ./dist",
     "format": "prettier --write 'src/**/*.{ts,tsx}' 'test/**/*.ts'",
     "lint:fix": "eslint --fix src test",

@@ -307,18 +307,30 @@ function ConfigPage({
             {readinessError}
           </p>
         ) : null}
-        {readiness?.tools.map((tool) => (
-          <div key={tool.id} style={{ ...rowStyle, borderTop: '1px solid var(--dsw-alias-border-l2)' }}>
-            <span style={copyStyle}>
-              <span style={labelStyle}>{tool.label}</span>
-              <span style={descriptionStyle}>
-                {tool.detail}
-                {tool.version ? ` · ${tool.version}` : ''}
+        {readiness?.tools.map((tool) => {
+          const warning = tool.state === 'unavailable' || tool.state === 'failed'
+          const color = tool.state === 'ready'
+            ? 'var(--dsw-alias-state-success-primary)'
+            : tool.state === 'failed'
+              ? 'var(--dsw-alias-state-error-primary)'
+              : warning ? 'var(--dsw-alias-state-warning-primary)' : 'var(--dsw-alias-label-secondary)'
+          return (
+            <div key={tool.id} style={{ ...rowStyle, borderTop: '1px solid var(--dsw-alias-border-l2)' }}>
+              <span style={copyStyle}>
+                <span style={labelStyle}>
+                  {tool.state === 'ready' ? '✓ ' : warning ? '⚠ ' : ''}{tool.label}
+                </span>
+                <span style={{ ...descriptionStyle, color: warning ? color : undefined }}>
+                  {tool.state === 'unavailable' ? 'Tool not found. Please install or configure path.'
+                    : tool.state === 'failed' ? 'Tool configuration failed. Check settings.'
+                    : tool.detail}
+                  {tool.version ? ' · ' + tool.version : ''}
+                </span>
               </span>
-            </span>
-            <strong style={{ ...descriptionStyle, textTransform: 'capitalize' }}>{tool.state}</strong>
-          </div>
-        ))}
+              <strong style={{ ...descriptionStyle, textTransform: 'capitalize', color }}>{tool.state}</strong>
+            </div>
+          )
+        })}
       </section>
       <section style={cardStyle}>
         <h3 style={titleStyle}>Languages and tools</h3>

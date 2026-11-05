@@ -15,10 +15,10 @@
         fixers:
           - name: ruff-fix
             extensions: ['.py']
-            argv: ['ruff', 'check', '--fix', '{file}']
+            argv: ['ruff', 'check', '--fix', '--no-cache', '{file}']
           - name: ruff-format
             extensions: ['.py']
-            argv: ['ruff', 'format', '{file}']
+            argv: ['ruff', 'format', '--no-cache', '{file}']
           - name: rustfmt
             extensions: ['.rs']
             argv: ['rustfmt', '--edition', '2021', '{file}']
@@ -34,7 +34,7 @@
         checkers:
           - name: ruff-verify
             extensions: ['.py']
-            argv: ['ruff', 'check', '{file}']
+            argv: ['ruff', 'check', '--no-cache', '{file}']
           - name: ty
             extensions: ['.py']
             argv: ['ty', 'check', '{file}']
