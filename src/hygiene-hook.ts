@@ -21,10 +21,16 @@ export function gitLocations(cwd: string): { root: string; gitDir: string; hookD
   const gitDir = git(cwd, ['rev-parse', '--absolute-git-dir'])
   if (!root || !gitDir) return undefined
   const configured = git(root, ['config', '--get', 'core.hooksPath'])
-  const hookDir = configured ? (isAbsolute(configured) ? configured : resolve(root, configured)) : join(gitDir, 'hooks')
+  const hookDir = configured
+    ? isAbsolute(configured)
+      ? configured
+      : resolve(root, configured)
+    : join(gitDir, 'hooks')
   return { root, gitDir, hookDir }
 }
-function quoteShell(value: string): string { return "'" + value.replaceAll("'", "'\\''") + "'" }
+function quoteShell(value: string): string {
+  return "'" + value.replaceAll("'", "'\\''") + "'"
+}
 
 /** Called by the native DSH post-execute listener. Idempotent and repo-local. */
 export function syncGitHygiene(cwd: string, policy: HygienePolicy): void {
@@ -40,8 +46,12 @@ export function syncGitHygiene(cwd: string, policy: HygienePolicy): void {
   mkdirSync(loc.hookDir, { recursive: true })
   const hook = join(loc.hookDir, 'pre-commit')
   const cli = fileURLToPath(new URL('./cli.js', import.meta.url))
-  const runner = 'if command -v acc-tools >/dev/null 2>&1; then\n  acc-tools hygiene || exit $?\nelse\n  ' +
-    quoteShell(process.execPath) + ' ' + quoteShell(cli) + ' hygiene || exit $?\nfi'
+  const runner =
+    'if command -v acc-tools >/dev/null 2>&1; then\n  acc-tools hygiene || exit $?\nelse\n  ' +
+    quoteShell(process.execPath) +
+    ' ' +
+    quoteShell(cli) +
+    ' hygiene || exit $?\nfi'
   const block = begin + '\n' + runner + '\n' + end + '\n'
   const existing = existsSync(hook) ? readFileSync(hook, 'utf8') : ''
   if (existing.includes(begin)) {
@@ -51,7 +61,8 @@ export function syncGitHygiene(cwd: string, policy: HygienePolicy): void {
     const updated = existing.slice(0, start) + block.trimEnd() + existing.slice(stop)
     if (updated !== existing) writeFileSync(hook, updated)
   } else if (existing) {
-    if (!existing.startsWith('#!')) throw new Error('Existing pre-commit hook has no shebang; cannot safely chain ACC')
+    if (!existing.startsWith('#!'))
+      throw new Error('Existing pre-commit hook has no shebang; cannot safely chain ACC')
     const nl = existing.indexOf('\n')
     const updated = existing.slice(0, nl + 1) + block + existing.slice(nl + 1)
     // Preserve the original hook content and mode. The injected command runs first.
@@ -72,8 +83,11 @@ export function readEffectiveHygiene(cwd: string): HygienePolicy {
     throw new Error('Invalid generated ACC Git hygiene policy')
   }
   const policy = data as HygienePolicy
-  if (typeof policy.enabled !== 'boolean' || !Array.isArray(policy.checks) ||
-    !policy.checks.every(item => typeof item === 'string')) {
+  if (
+    typeof policy.enabled !== 'boolean' ||
+    !Array.isArray(policy.checks) ||
+    !policy.checks.every((item) => typeof item === 'string')
+  ) {
     throw new Error('Invalid generated ACC Git hygiene policy fields')
   }
   return policy

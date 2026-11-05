@@ -4,6 +4,8 @@ Thanks for your interest in improving **dsh-auto-code-correct**, the DeepSeek Ha
 
 This is a small maintainer-led project with **limited review capacity**. Please keep contributions focused and reviewable. A proposed change may not be accepted or reviewed immediately.
 
+Every Web-capable ACC change must satisfy the [single all-plugin lessons authority](https://github.com/l00p3rl00p/quatrus-scratchpad/blob/main/plugins/plugin-lessons.md), including its recorded ACC-specific findings. The GitHub Actions packager's emitted-bundle import check is mandatory even for UI-only changes. Browser mounting, persistence and actual edit behavior remain separate live acceptance gates; do not present a Host-only green CI run as proof of Web health.
+
 ## Before you contribute
 
 - **Bug fix or small documentation correction:** Open a focused pull request that explains the problem, the change, and how you verified it.
@@ -14,7 +16,7 @@ This is a small maintainer-led project with **limited review capacity**. Please 
 
 1. Fork the repository and create a short-lived branch. Do not push directly to `main`.
 2. Make the smallest change that solves the agreed problem. Prefer existing DSH/Cordis extension points and installed tools. **Do not add custom integrations until existing native capabilities have been audited and the maintainer has approved the approach.**
-3. Update the existing authoritative documentation where relevant: [ARCHITECTURE.md](ARCHITECTURE.md) for design, [ENVIRONMENT.md](ENVIRONMENT.md) for environment assumptions, [RUNBOOK.md](RUNBOOK.md) for operating instructions, or [README.md](README.md) for getting started. Do not create extra planning or status Markdown files.
+3. Update the existing authoritative documentation where relevant: [ARCHITECTURE.md](ARCHITECTURE.md) for design and component ownership, [ENVIRONMENT.md](ENVIRONMENT.md) for environment assumptions and delivered surfaces, [RUNBOOK.md](RUNBOOK.md) for operating instructions, or [README.md](README.md) for getting started. Keep the component list synchronized when adding host, client, settings, or conversation-view surfaces. Do not create extra planning or status Markdown files.
 4. Run the checks locally before opening the PR:
 
    ```bash

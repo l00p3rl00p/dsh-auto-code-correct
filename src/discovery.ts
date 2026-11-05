@@ -22,14 +22,16 @@ export interface FoundTool {
 }
 const windowsSuffixes = ['.exe', '.cmd', '.bat', '']
 function candidateFiles(directory: string, executable: string, windows: boolean): string[] {
-  return (windows ? windowsSuffixes : ['']).map(suffix => join(directory, executable + suffix))
+  return (windows ? windowsSuffixes : ['']).map((suffix) => join(directory, executable + suffix))
 }
 function usable(file: string, platform: NodeJS.Platform): boolean {
   try {
     if (!statSync(file).isFile()) return false
     accessSync(file, platform === 'win32' ? constants.F_OK : constants.X_OK)
     return true
-  } catch { return false }
+  } catch {
+    return false
+  }
 }
 /** Paths are checked, never executed. Explicit broken paths must not silently fall back. */
 export function findTool(executable: string, options: FindOptions = {}): FoundTool {
@@ -39,12 +41,18 @@ export function findTool(executable: string, options: FindOptions = {}): FoundTo
   const explicit = options.explicit
   if (explicit) {
     const path = resolve(explicit)
-    return usable(path, platform) ? { path, status: 'installed', source: 'explicit' } : { status: 'invalid-override' }
+    return usable(path, platform)
+      ? { path, status: 'installed', source: 'explicit' }
+      : { status: 'invalid-override' }
   }
   const dirs: { dir: string; source: NonNullable<FoundTool['source']> }[] = []
   if (options.prefix) {
     const root = resolve(options.prefix)
-    dirs.push({ dir: join(root, 'bin'), source: 'prefix' }, { dir: join(root, 'node_modules', '.bin'), source: 'prefix' }, { dir: join(root, 'rust', 'cargo', 'bin'), source: 'prefix' })
+    dirs.push(
+      { dir: join(root, 'bin'), source: 'prefix' },
+      { dir: join(root, 'node_modules', '.bin'), source: 'prefix' },
+      { dir: join(root, 'rust', 'cargo', 'bin'), source: 'prefix' },
+    )
   }
   if (options.cwd) {
     let directory = resolve(options.cwd)
@@ -57,9 +65,15 @@ export function findTool(executable: string, options: FindOptions = {}): FoundTo
     }
   }
   for (const directory of options.toolDirectories ?? []) {
-    dirs.push({ dir: resolve(directory), source: 'search-dir' }, { dir: resolve(directory, 'bin'), source: 'search-dir' }, { dir: resolve(directory, 'node_modules', '.bin'), source: 'search-dir' }, { dir: resolve(directory, 'rust', 'cargo', 'bin'), source: 'search-dir' })
+    dirs.push(
+      { dir: resolve(directory), source: 'search-dir' },
+      { dir: resolve(directory, 'bin'), source: 'search-dir' },
+      { dir: resolve(directory, 'node_modules', '.bin'), source: 'search-dir' },
+      { dir: resolve(directory, 'rust', 'cargo', 'bin'), source: 'search-dir' },
+    )
   }
-  for (const directory of (options.path ?? process.env.PATH ?? '').split(delimiter).filter(Boolean)) dirs.push({ dir: directory, source: 'PATH' })
+  for (const directory of (options.path ?? process.env.PATH ?? '').split(delimiter).filter(Boolean))
+    dirs.push({ dir: directory, source: 'PATH' })
   for (const item of dirs) {
     for (const path of candidateFiles(item.dir, executable, windows)) {
       if (usable(path, platform)) return { path: resolve(path), status: 'installed', source: item.source }
@@ -68,7 +82,10 @@ export function findTool(executable: string, options: FindOptions = {}): FoundTo
   return { status: 'missing' }
 }
 export function configuredToolDirectories(env: NodeJS.ProcessEnv = process.env): string[] {
-  return (env.ACC_TOOL_PATHS ?? '').split(delimiter).map(s => s.trim()).filter(Boolean)
+  return (env.ACC_TOOL_PATHS ?? '')
+    .split(delimiter)
+    .map((s) => s.trim())
+    .filter(Boolean)
 }
 /** Verify the resolved executable works, but do not require all binaries to support --version. */
 export function executableVersion(path: string): string | undefined {
