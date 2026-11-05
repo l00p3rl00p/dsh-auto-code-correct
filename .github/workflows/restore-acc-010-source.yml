@@ -1,0 +1,50 @@
+name: Restore recovered original ACC source
+on:
+  push:
+    branches:
+      - restore/0.1.12-from-original-0.1.10
+permissions:
+  contents: write
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+      - name: Restore exact original recovered source
+        run: |
+          python3 - <<'PY'
+          import base64, gzip, json
+          from pathlib import Path
+          for file in ('autocorrect-view', 'index'):
+              data = Path(f'.recovery/{file}.tsx.gz.b64').read_text().strip()
+              Path(f'src/client/{file}.tsx').write_bytes(gzip.decompress(base64.b64decode(data)))
+          p = Path('package.json')
+          obj = json.loads(p.read_text())
+          obj['version'] = '0.1.12'
+          p.write_text(json.dumps(obj, indent=2) + '\n')
+          PY
+      - name: Install and validate before committing
+        run: |
+          pnpm install --no-frozen-lockfile
+          pnpm exec prettier --write src/client/autocorrect-view.tsx src/client/index.tsx
+          pnpm run lint
+          pnpm run typecheck
+          pnpm test
+      - name: Commit verified original source and remove staging
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/client/autocorrect-view.tsx src/client/index.tsx package.json pnpm-lock.yaml
+          git rm -r .recovery
+          git rm .github/workflows/restore-acc-010-source.yml
+          git commit -m 'Restore original 0.1.10 TypeScript and prepare 0.1.12'
+          git push origin HEAD:restore/0.1.12-from-original-0.1.10
