@@ -37,13 +37,17 @@ export interface AccResultMeta extends JsonObject {
 }
 
 /**
- * ACC-owned durable session event. It records only operations that ACC actually
+ * ACC-owned durable session record. It records only operations that ACC actually
  * executed; it is not a synthetic tool or PTC event and it never changes the
  * owning edit result.
+ *
+ * External plugins use PluginRecordMap: DSH's compiled KNOWN_SESSION_EVENT_TYPES
+ * does not include external events. Plugin records are marked ignorable so
+ * sessions remain readable when ACC is not installed.
  */
 declare module '@deepseek-ai/dsh-session/types' {
-  interface SessionEventMap {
-    'auto-code-correct/operation': AccResultMeta
+  interface PluginRecordMap {
+    'plugin:auto-code-correct/operation': AccResultMeta
   }
 }
 
