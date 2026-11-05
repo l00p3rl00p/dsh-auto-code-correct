@@ -1,4 +1,14 @@
 import { defineConfig } from 'tsdown'
+import { fileURLToPath } from 'node:url'
+
+// Resolve the published runtime entry, not the declaration-only subpath.
+// This is a tsdown resolution hint; the browser code still bundles the module.
+const typertRemoteInfoRuntime = fileURLToPath(
+  import.meta.resolve('@deepseek-ai/dsh-typert-protocol/remote-info'),
+)
+if (!typertRemoteInfoRuntime.endsWith('.js')) {
+  throw new Error('Typert remote-info did not resolve to a runnable JavaScript entry')
+}
 
 const clientModules = [
   'react', 'react/jsx-runtime', 'react-dom', 'react-dom/client',
@@ -9,7 +19,12 @@ const clientModules = [
 ]
 export default defineConfig([
   {
-    entry: ['src/index.ts', 'src/cli.ts'],
+    entry: {
+      index: 'src/index.ts',
+      cli: 'src/cli.ts',
+      'typert.host': 'src/typert.host.ts',
+      'typert.remote-client': 'src/typert.remote-client.ts',
+    },
     outDir: 'lib',
     format: 'esm',
     platform: 'node',
@@ -22,11 +37,23 @@ export default defineConfig([
     outDir: 'lib',
     format: 'cjs',
     platform: 'browser',
+    // The pnpm/tsdown rc.5 subpath can otherwise be left as a CJS external.
+    // Alias explicitly to the package's JS runtime entry, not its .d.ts metadata.
+    alias: {
+      '@deepseek-ai/dsh-typert-protocol/remote-info': typertRemoteInfoRuntime,
+    },
     clean: false,
     dts: false,
     deps: {
       neverBundle: clientModules,
-      alwaysBundle: (name: string) => clientModules.includes(name) ? undefined : true,
+      // The DSH Web loader only supplies the modules explicitly externalized above.
+      // Typert remote-info is NOT a registered DSH browser loader module.
+      // Bundle its resolved JS entry and its schema dependency.
+      alwaysBundle: [
+        '@deepseek-ai/dsh-typert-protocol',
+        '@deepseek-ai/dsh-typert-protocol/remote-info',
+        'zod',
+      ],
     },
     outputOptions: {
       entryFileNames: 'client.js',

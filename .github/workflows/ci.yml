@@ -49,10 +49,16 @@ jobs:
         run: pnpm run build
       - name: Validate native DSH package contract
         run: pnpm run check:package
+      # check:package rejects browser requires outside DSH's registered loader modules.
       - name: Package installable DSH plugin
         run: |
           mkdir -p dist
           pnpm pack --pack-destination dist
+      - name: Read package version
+        id: package
+        run: |
+          version=$(node -p "require('./package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: Verify bundled plugin actually imports
         run: |
           node --input-type=module -e "import('./lib/index.js').then(m => { if (typeof m.apply !== 'function' || !m.Config) process.exit(1) })"
@@ -61,20 +67,22 @@ jobs:
         run: |
           test -f lib/index.js
           test -f lib/index.d.ts
-          tar -tzf dist/*.tgz | grep -q 'package/lib/index.js'
-          tar -tzf dist/*.tgz | grep -q 'package/cordis.patch.yml'
-          tar -tzf dist/*.tgz | grep -q 'package/lib/cli.js'
-          tar -tzf dist/*.tgz | grep -q 'package/lib/client.js'
+          tar -tzf "dist/dsh-auto-code-correct-${{ steps.package.outputs.version }}.tgz" | grep -q 'package/lib/index.js'
+          tar -tzf "dist/dsh-auto-code-correct-${{ steps.package.outputs.version }}.tgz" | grep -q 'package/cordis.patch.yml'
+          tar -tzf "dist/dsh-auto-code-correct-${{ steps.package.outputs.version }}.tgz" | grep -q 'package/lib/cli.js'
+          tar -tzf "dist/dsh-auto-code-correct-${{ steps.package.outputs.version }}.tgz" | grep -q 'package/lib/client.js'
       - name: Install package into clean official DSH profile
         env:
           DSH_HOME: ${{ runner.temp }}/acc-dsh-home
         run: |
-          pnpm dlx --package=@deepseek-ai/dsh@0.2.1-rc.5 dsh plugin --profile acc-ci add @deepseek-ai/dsh-lsp@0.2.1-rc.5 @deepseek-ai/dsh-lsp-stdio@0.2.1-rc.5 ./dist/dsh-auto-code-correct-0.1.0.tgz
+          ARTIFACT="./dist/dsh-auto-code-correct-${{ steps.package.outputs.version }}.tgz"
+          test -f "$ARTIFACT"
+          pnpm dlx --package=@deepseek-ai/dsh@0.2.1-rc.5 dsh plugin --profile acc-ci add @deepseek-ai/dsh-lsp@0.2.1-rc.5 @deepseek-ai/dsh-lsp-stdio@0.2.1-rc.5 "$ARTIFACT"
           pnpm dlx --package=@deepseek-ai/dsh@0.2.1-rc.5 dsh --profile acc-ci --dump-config | grep -q auto-code-correct
       - name: Publish installable plugin artifact
         uses: actions/upload-artifact@v4
         with:
           name: dsh-auto-code-correct-plugin
-          path: dist/*.tgz
+          path: dist/dsh-auto-code-correct-${{ steps.package.outputs.version }}.tgz
           if-no-files-found: error
           retention-days: 90

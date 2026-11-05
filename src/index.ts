@@ -10,11 +10,18 @@
  */
 
 import { dirname, isAbsolute, relative, resolve, parse } from 'node:path'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { capabilityEnabled, languageForExtension } from './capabilities.js'
 import { registerAccCommands } from './commands.js'
 import { DEFAULT_HYGIENE, syncGitHygiene } from './hygiene-hook.js'
 import { configuredToolDirectories, findTool } from './discovery.js'
+import { AccReadinessService } from './readiness-service.js'
+import {
+  ACC_RESULT_META_VERSION,
+  type AccFileChange,
+  type AccOperationRecord,
+  type AccResultMeta,
+} from './operation-record.js'
 import type { Language } from './capabilities.js'
 import * as nativeLspStdio from '@deepseek-ai/dsh-lsp-stdio'
 import * as lspActions from 'dsh-lsp-actions'
@@ -24,7 +31,12 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { MessageSource } from '@deepseek-ai/dsh-llm'
 import type { UserMessage } from '@deepseek-ai/dsh-session'
 import type { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
-import type { PostToolDecision, ToolExecution, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
+import type {
+  PostToolDecision,
+  ToolDispatchExecution,
+  ToolExecution,
+  ToolExecutionResult,
+} from '@deepseek-ai/dsh-tools'
 
 export const name = 'auto-code-correct'
 export const inject = ['subprocess']
@@ -104,10 +116,24 @@ const CheckerSchema: z<CheckerConfig> = z.object({
 })
 
 export const Config: z = z.object({
-  languages: z.object({ python: z.boolean().default(true), rust: z.boolean().default(false), typescript: z.boolean().default(false) }).default({ python: true, rust: false, typescript: false }).volatile(),
+  languages: z
+    .object({
+      python: z.boolean().default(true),
+      rust: z.boolean().default(false),
+      typescript: z.boolean().default(false),
+    })
+    .default({ python: true, rust: false, typescript: false })
+    .volatile(),
   capabilities: z.dict(z.boolean()).default({}).volatile(),
   hygieneEnabled: z.boolean().default(true).volatile(),
-  languageServers: z.object({ python: z.boolean().default(true), rust: z.boolean().default(true), typescript: z.boolean().default(true) }).default({ python: true, rust: true, typescript: true }).volatile(),
+  languageServers: z
+    .object({
+      python: z.boolean().default(true),
+      rust: z.boolean().default(true),
+      typescript: z.boolean().default(true),
+    })
+    .default({ python: true, rust: true, typescript: true })
+    .volatile(),
   executables: z.dict(z.string()).default({}).volatile(),
   tools: z.array(z.string()).default(['write', 'edit', 'str_replace_editor']),
   checkers: z.array(CheckerSchema).default([]),
@@ -127,11 +153,24 @@ declare module '@deepseek-ai/dsh-llm' {
 }
 const PLUGIN_SOURCE: MessageSource = { kind: 'auto-code-correct' }
 
-/** One checker's verdict for one file. */
-interface Finding {
-  checker: string
-  /** Collected text from the checker's declared streams, already trimmed. */
+type OperationKind = 'fixer' | 'checker'
+type OperationStatus = 'clean' | 'findings' | 'failed' | 'unavailable' | 'timeout' | 'cancelled'
+
+/** One correction or verification operation, retained even when it succeeds cleanly. */
+interface OperationResult {
+  kind: OperationKind
+  name: string
+  argv: string[]
+  cwd: string
+  startedAt: number
+  durationMs: number
+  status: OperationStatus
+  exitCode?: number | null
+  signal?: string | null
+  /** Collected text from the configured streams, already trimmed. */
   output: string
+  /** File diff caused by this fixer, when ACC could read both sides. */
+  change?: AccFileChange
 }
 
 /**
@@ -165,7 +204,7 @@ function extensionOf(filePath: string): string {
  * @param result - its successful result.
  * @returns the edited path, or undefined when neither source carries one.
  */
-function editedPath(exec: ToolExecution, result: Readonly<ToolExecutionResult>): string | undefined {
+export function editedPath(exec: ToolExecution, result: Readonly<ToolExecutionResult>): string | undefined {
   if (!result.isError) {
     const value: unknown = result.value
     if (typeof value === 'object' && value !== null && 'path' in value) {
@@ -174,7 +213,14 @@ function editedPath(exec: ToolExecution, result: Readonly<ToolExecutionResult>):
     }
   }
   const args: unknown = exec.arguments
-  if (typeof args === 'object' && args !== null && 'file_path' in args) {
+  if (typeof args !== 'object' || args === null) return undefined
+  if (exec.name === 'str_replace_editor') {
+    const command = 'command' in args ? (args as { command: unknown }).command : undefined
+    if (command === 'view') return undefined
+    const path = 'path' in args ? (args as { path: unknown }).path : undefined
+    if (typeof path === 'string' && path.length > 0) return path
+  }
+  if ('file_path' in args) {
     const filePath = (args as { file_path: unknown }).file_path
     if (typeof filePath === 'string' && filePath.length > 0) return filePath
   }
@@ -194,8 +240,9 @@ function substitute(argv: readonly string[], filePath: string, cwd: string): str
     '{relFile}': relative(cwd, filePath),
     '{dir}': dirname(filePath),
   }
-  return argv.map(argument =>
-    argument.replaceAll(/\{file\}|\{relFile\}|\{dir\}/g, match => replacements[match] as string))
+  return argv.map((argument) =>
+    argument.replaceAll(/\{file\}|\{relFile\}|\{dir\}/g, (match) => replacements[match] as string),
+  )
 }
 
 /**
@@ -224,14 +271,21 @@ function validateCheckers(checkers: readonly CheckerConfig[]): void {
     if (label.length === 0) throw new Error('auto-code-correct: every checker needs a non-empty `name`')
     if (seen.has(label)) throw new Error(`auto-code-correct: duplicate checker name ${label}`)
     seen.add(label)
-    if (checker.argv.length === 0) throw new Error(`auto-code-correct: checker ${label} has an empty \`argv\``)
-    if (checker.extensions.length === 0) throw new Error(`auto-code-correct: checker ${label} claims no \`extensions\``)
-    if (checker.streams.length === 0) throw new Error(`auto-code-correct: checker ${label} reads no \`streams\``)
+    if (checker.argv.length === 0)
+      throw new Error(`auto-code-correct: checker ${label} has an empty \`argv\``)
+    if (checker.extensions.length === 0)
+      throw new Error(`auto-code-correct: checker ${label} claims no \`extensions\``)
+    if (checker.streams.length === 0)
+      throw new Error(`auto-code-correct: checker ${label} reads no \`streams\``)
     for (const [field, value] of [
-      ['timeoutMs', checker.timeoutMs], ['graceMs', checker.graceMs], ['maxOutputBytes', checker.maxOutputBytes],
+      ['timeoutMs', checker.timeoutMs],
+      ['graceMs', checker.graceMs],
+      ['maxOutputBytes', checker.maxOutputBytes],
     ] as const) {
       if (!Number.isInteger(value) || value < 1) {
-        throw new Error(`auto-code-correct: checker ${label} has invalid ${field} ${value} — must be an integer >= 1`)
+        throw new Error(
+          `auto-code-correct: checker ${label} has invalid ${field} ${value} — must be an integer >= 1`,
+        )
       }
     }
   }
@@ -244,37 +298,88 @@ function validateCheckers(checkers: readonly CheckerConfig[]): void {
  */
 export function apply(ctx: Context, config: Config): void {
   registerAccCommands(ctx)
+  new AccReadinessService(ctx, config)
   validateCheckers([...config.fixers, ...config.checkers])
   const effectiveEnabled = (extension: string, name: string): boolean => {
-    return capabilityEnabled(languageForExtension(extension), name, config.languages.get(), config.capabilities.get())
+    return capabilityEnabled(
+      languageForExtension(extension),
+      name,
+      config.languages.get(),
+      config.capabilities.get(),
+    )
   }
   if (!Number.isInteger(config.maxDiagnosticChars) || config.maxDiagnosticChars < 1) {
-    throw new Error(`auto-code-correct: invalid maxDiagnosticChars ${config.maxDiagnosticChars} — must be an integer >= 1`)
+    throw new Error(
+      `auto-code-correct: invalid maxDiagnosticChars ${config.maxDiagnosticChars} — must be an integer >= 1`,
+    )
   }
 
   if (config.checkers.length === 0 && config.fixers.length === 0) {
     // Not misconfiguration — the plugin is installed but not yet told what the
     // deployment's toolchain is, and silence would look like a broken plugin.
-    console.warn('[auto-code-correct] no checkers configured; this plugin will not run anything. See its README for examples.')
+    console.warn(
+      '[auto-code-correct] no checkers configured; this plugin will not run anything. See its README for examples.',
+    )
   }
 
   // Use DSH's native LSP stdio provider, not a parallel LSP implementation.
   // If this deployment has no LSP service, the nested injection stays dormant.
-  ctx.inject(['fs', 'lsp', 'subprocess'], async scoped => {
-    const entries: Record<string, { command: string; args: string[]; extensionToLanguage: Record<string, string> }> = {}
+  ctx.inject(['fs', 'lsp', 'subprocess'], async (scoped) => {
+    const entries: Record<
+      string,
+      { command: string; args: string[]; extensionToLanguage: Record<string, string> }
+    > = {}
     const requested = [
-      { language: 'python' as const, id: 'ty-lsp', command: 'ty', args: ['server'], mapping: { '.py': 'python' } },
-      { language: 'rust' as const, id: 'rust-analyzer', command: 'rust-analyzer', args: [], mapping: { '.rs': 'rust' } },
-      { language: 'typescript' as const, id: 'typescript-lsp', command: 'typescript-language-server', args: ['--stdio'], mapping: { '.ts': 'typescript', '.tsx': 'typescriptreact' } },
+      {
+        language: 'python' as const,
+        id: 'ty-lsp',
+        command: 'ty',
+        args: ['server'],
+        mapping: { '.py': 'python' },
+      },
+      {
+        language: 'rust' as const,
+        id: 'rust-analyzer',
+        command: 'rust-analyzer',
+        args: [],
+        mapping: { '.rs': 'rust' },
+      },
+      {
+        language: 'typescript' as const,
+        id: 'typescript-lsp',
+        command: 'typescript-language-server',
+        args: ['--stdio'],
+        mapping: { '.ts': 'typescript', '.tsx': 'typescriptreact' },
+      },
     ]
     for (const item of requested) {
-      if (!config.languages.get()[item.language] || !config.languageServers.get()[item.language] || config.capabilities.get()[item.id] === false) continue
-      const command = findTool(item.command, { explicit: config.executables.get()[item.command], prefix: process.env.ACC_TOOL_ROOT, toolDirectories: configuredToolDirectories() }).path ?? (config.executables.get()[item.command] ?? item.command)
+      if (
+        !config.languages.get()[item.language] ||
+        !config.languageServers.get()[item.language] ||
+        config.capabilities.get()[item.id] === false
+      )
+        continue
+      const command =
+        findTool(item.command, {
+          explicit: config.executables.get()[item.command],
+          prefix: process.env.ACC_TOOL_ROOT,
+          toolDirectories: configuredToolDirectories(),
+        }).path ??
+        config.executables.get()[item.command] ??
+        item.command
       try {
         await scoped.subprocess.resolveExecutable(command)
-        entries[item.language] = { command, args: item.args, extensionToLanguage: Object.fromEntries(Object.entries(item.mapping).filter(([, v]) => typeof v === 'string')) as Record<string, string> }
+        entries[item.language] = {
+          command,
+          args: item.args,
+          extensionToLanguage: Object.fromEntries(
+            Object.entries(item.mapping).filter(([, v]) => typeof v === 'string'),
+          ) as Record<string, string>,
+        }
       } catch (error) {
-        console.warn(`[auto-code-correct] ${item.id} unavailable; install it and reload ACC: ${errorMessage(error)}`)
+        console.warn(
+          `[auto-code-correct] ${item.id} unavailable; install it and reload ACC: ${errorMessage(error)}`,
+        )
       }
     }
     if (Object.keys(entries).length) scoped.plugin(nativeLspStdio, { servers: entries })
@@ -283,39 +388,102 @@ export function apply(ctx: Context, config: Config): void {
   // Reuse the existing multi-language LSP actions plugin. It accepts an arbitrary
   // table of language servers; no fork or three copies of its client are needed.
   // Already-registered action tools remain authoritative and are not duplicated.
-  ctx.inject(['fs', 'tools', 'subprocess'], async scoped => {
+  ctx.inject(['fs', 'tools', 'subprocess'], async (scoped) => {
     const actionNames = ['lsp_diagnostics', 'lsp_format', 'lsp_completion', 'lsp_code_action']
-    if (actionNames.some(action => scoped.tools.get(action))) {
+    if (actionNames.some((action) => scoped.tools.get(action))) {
       console.info('[auto-code-correct] existing LSP action tools detected; retaining them')
       return
     }
-    const entries: Record<string, { command: string; args: string[]; extensionToLanguage: Record<string, string>; projectMarkers: string[] }> = {}
+    const entries: Record<
+      string,
+      {
+        command: string
+        args: string[]
+        extensionToLanguage: Record<string, string>
+        projectMarkers: string[]
+      }
+    > = {}
     for (const option of [
-      { language: 'python' as const, id: 'ty-lsp', command: 'ty', args: ['server'], mapping: { '.py': 'python' }, markers: ['pyproject.toml'] },
-      { language: 'rust' as const, id: 'rust-analyzer', command: 'rust-analyzer', args: [], mapping: { '.rs': 'rust' }, markers: ['Cargo.toml'] },
-      { language: 'typescript' as const, id: 'typescript-lsp', command: 'typescript-language-server', args: ['--stdio'], mapping: { '.ts': 'typescript', '.tsx': 'typescriptreact' }, markers: ['tsconfig.json', 'package.json'] },
+      {
+        language: 'python' as const,
+        id: 'ty-lsp',
+        command: 'ty',
+        args: ['server'],
+        mapping: { '.py': 'python' },
+        markers: ['pyproject.toml'],
+      },
+      {
+        language: 'rust' as const,
+        id: 'rust-analyzer',
+        command: 'rust-analyzer',
+        args: [],
+        mapping: { '.rs': 'rust' },
+        markers: ['Cargo.toml'],
+      },
+      {
+        language: 'typescript' as const,
+        id: 'typescript-lsp',
+        command: 'typescript-language-server',
+        args: ['--stdio'],
+        mapping: { '.ts': 'typescript', '.tsx': 'typescriptreact' },
+        markers: ['tsconfig.json', 'package.json'],
+      },
     ]) {
-      if (!config.languages.get()[option.language] || !config.languageServers.get()[option.language] || config.capabilities.get()[option.id] === false) continue
-      const command = findTool(option.command, { explicit: config.executables.get()[option.command], prefix: process.env.ACC_TOOL_ROOT, toolDirectories: configuredToolDirectories() }).path ?? (config.executables.get()[option.command] ?? option.command)
+      if (
+        !config.languages.get()[option.language] ||
+        !config.languageServers.get()[option.language] ||
+        config.capabilities.get()[option.id] === false
+      )
+        continue
+      const command =
+        findTool(option.command, {
+          explicit: config.executables.get()[option.command],
+          prefix: process.env.ACC_TOOL_ROOT,
+          toolDirectories: configuredToolDirectories(),
+        }).path ??
+        config.executables.get()[option.command] ??
+        option.command
       try {
         await scoped.subprocess.resolveExecutable(command)
-        entries[option.language] = { command, args: option.args, extensionToLanguage: Object.fromEntries(Object.entries(option.mapping).filter(([, v]) => typeof v === 'string')) as Record<string, string>, projectMarkers: option.markers }
+        entries[option.language] = {
+          command,
+          args: option.args,
+          extensionToLanguage: Object.fromEntries(
+            Object.entries(option.mapping).filter(([, v]) => typeof v === 'string'),
+          ) as Record<string, string>,
+          projectMarkers: option.markers,
+        }
       } catch (error) {
-        console.warn(`[auto-code-correct] LSP actions for ${option.language} unavailable: ${errorMessage(error)}`)
+        console.warn(
+          `[auto-code-correct] LSP actions for ${option.language} unavailable: ${errorMessage(error)}`,
+        )
       }
     }
-    if (Object.keys(entries).length > 0) scoped.plugin(lspActions, { servers: entries, editor: { enabled: false } })
+    if (Object.keys(entries).length > 0)
+      scoped.plugin(lspActions, { servers: entries, editor: { enabled: false } })
   })
 
   const hygienePolicy = () => ({
     enabled: config.hygieneEnabled.get(),
-    checks: [...DEFAULT_HYGIENE, 'large-files', 'dependency-audit', 'license-audit', 'history-secrets']
-      .filter(id => config.capabilities.get()[id] === true || (config.capabilities.get()[id] !== false && DEFAULT_HYGIENE.some(value => value === id))),
+    checks: [
+      ...DEFAULT_HYGIENE,
+      'large-files',
+      'dependency-audit',
+      'license-audit',
+      'history-secrets',
+    ].filter(
+      (id) =>
+        config.capabilities.get()[id] === true ||
+        (config.capabilities.get()[id] !== false && DEFAULT_HYGIENE.some((value) => value === id)),
+    ),
   })
   // Install the repository-local Git pre-commit integration on plugin activation
   // when the Harness starts inside a repository, then for each edited repository.
-  try { syncGitHygiene(process.cwd(), hygienePolicy()) }
-  catch (error) { console.warn('[auto-code-correct] Git hygiene setup: ' + errorMessage(error)) }
+  try {
+    syncGitHygiene(process.cwd(), hygienePolicy())
+  } catch (error) {
+    console.warn('[auto-code-correct] Git hygiene setup: ' + errorMessage(error))
+  }
 
   const watchedTools = new Set(config.tools)
   // Extension → checkers, precomputed once so a hot post-execute path does no
@@ -337,17 +505,21 @@ export function apply(ctx: Context, config: Config): void {
     }
   }
 
-
   /** Project-scoped tools must execute from the nearest actual project root. */
   function workingDirectory(filePath: string, checker: CheckerConfig): string {
     const extension = extensionOf(filePath)
-    const markers = extension === '.rs' ? ['Cargo.toml']
-      : extension === '.ts' || extension === '.tsx' ? (checker.name === 'typescript-check' ? ['tsconfig.json'] : ['package.json', 'tsconfig.json'])
-      : []
+    const markers =
+      extension === '.rs'
+        ? ['Cargo.toml']
+        : extension === '.ts' || extension === '.tsx'
+          ? checker.name === 'typescript-check'
+            ? ['tsconfig.json']
+            : ['package.json', 'tsconfig.json']
+          : []
     if (markers.length === 0) return resolve(checker.cwd)
     let dir = dirname(filePath)
     while (true) {
-      if (markers.some(marker => existsSync(resolve(dir, marker)))) return dir
+      if (markers.some((marker) => existsSync(resolve(dir, marker)))) return dir
       const parent = dirname(dir)
       if (parent === dir || dir === parse(dir).root) break
       dir = parent
@@ -355,37 +527,60 @@ export function apply(ctx: Context, config: Config): void {
     throw new Error(`no project root found for ${filePath} (expected ${markers.join(' or ')})`)
   }
 
-  /**
-   * Run one checker over one file and return its findings.
-   * @param checker - the checker to run.
-   * @param filePath - absolute path of the edited file.
-   * @param signal - the tool call's cancellation signal.
-   * @returns the finding, or undefined when the checker was clean, cancelled, or unavailable.
-   */
-  async function runChecker(
-    checker: CheckerConfig, filePath: string, signal: AbortSignal,
-  ): Promise<Finding | undefined> {
+  /** Run one correction or verification command and retain its complete outcome. */
+  async function runOperation(
+    kind: OperationKind,
+    checker: CheckerConfig,
+    filePath: string,
+    signal: AbortSignal,
+  ): Promise<OperationResult> {
+    const started = Date.now()
     const subprocess: SubprocessRuntime = ctx.subprocess
     let cwd: string
     try {
       cwd = workingDirectory(filePath, checker)
     } catch (error) {
-      return { checker: checker.name, output: errorMessage(error) }
+      return {
+        kind,
+        name: checker.name,
+        argv: [...checker.argv],
+        cwd: resolve(checker.cwd),
+        startedAt: started,
+        durationMs: Date.now() - started,
+        // A missing project manifest is an unavailable prerequisite, not a
+        // defect in the edited code and not a process execution failure.
+        status: 'unavailable',
+        output: errorMessage(error),
+      }
     }
     const argv = substitute(checker.argv, filePath, cwd)
     const requested = argv[0] as string
     const localExecutable = resolve(cwd, 'node_modules', '.bin', requested)
-    // Respect a user-specified executable first, then project dependencies, then PATH.
-    argv[0] = findTool(requested, { explicit: config.executables.get()[requested], prefix: process.env.ACC_TOOL_ROOT, cwd, toolDirectories: configuredToolDirectories() }).path ?? (config.executables.get()[requested] ?? (existsSync(localExecutable) ? localExecutable : requested))
+    argv[0] =
+      findTool(requested, {
+        explicit: config.executables.get()[requested],
+        prefix: process.env.ACC_TOOL_ROOT,
+        cwd,
+        toolDirectories: configuredToolDirectories(),
+      }).path ??
+      config.executables.get()[requested] ??
+      (existsSync(localExecutable) ? localExecutable : requested)
 
     let executable: string
     try {
       executable = await subprocess.resolveExecutable(argv[0] as string, undefined, signal)
+      argv[0] = executable
     } catch (error) {
-      // An unresolvable executable is an environment fact, not config the
-      // schema could have rejected: report it once as a finding so the person
-      // reading the transcript sees why diagnostics stopped, then stay quiet.
-      return { checker: checker.name, output: `checker unavailable: ${errorMessage(error)}` }
+      return {
+        kind,
+        name: checker.name,
+        argv,
+        cwd,
+        startedAt: started,
+        durationMs: Date.now() - started,
+        status: signal.aborted ? 'cancelled' : 'unavailable',
+        output: signal.aborted ? 'cancelled before launch' : errorMessage(error),
+      }
     }
 
     const timeout = new AbortController()
@@ -393,97 +588,183 @@ export function apply(ctx: Context, config: Config): void {
     const collect = { maxBytes: checker.maxOutputBytes }
     try {
       const handle = subprocess.spawn({
-        argv: [executable, ...argv.slice(1)],
+        argv,
         cwd,
         stdio: { stdin: 'ignore', stdout: collect, stderr: collect },
         graceMs: checker.graceMs,
         signal: AbortSignal.any([signal, timeout.signal]),
       })
       const outcome = await handle.done
-      if (timeout.signal.aborted) {
-        return { checker: checker.name, output: `checker timed out after ${checker.timeoutMs}ms` }
-      }
-      if (signal.aborted) return undefined
-      if (outcome.exitCode !== null && checker.cleanExitCodes.includes(outcome.exitCode)) return undefined
       const output = checker.streams
-        .map(stream => handle.collected[stream]?.readFrom(0).text ?? '')
+        .map((stream) => handle.collected[stream]?.readFrom(0).text ?? '')
         .join('')
         .trim()
-      return { checker: checker.name, output: output || `exited with code ${outcome.exitCode ?? 'unknown'} without diagnostic output` }
+      const common = {
+        kind,
+        name: checker.name,
+        argv,
+        cwd,
+        startedAt: started,
+        durationMs: Date.now() - started,
+        exitCode: outcome.exitCode,
+        signal: outcome.signal,
+      }
+      if (timeout.signal.aborted) {
+        return { ...common, status: 'timeout', output: output || `timed out after ${checker.timeoutMs}ms` }
+      }
+      if (signal.aborted) return { ...common, status: 'cancelled', output: output || 'cancelled' }
+      if (outcome.exitCode !== null && checker.cleanExitCodes.includes(outcome.exitCode)) {
+        return { ...common, status: 'clean', output }
+      }
+      return {
+        ...common,
+        status: 'findings',
+        output: output || `exited with code ${outcome.exitCode ?? 'unknown'} without diagnostic output`,
+      }
     } catch (error) {
-      // `done` rejects only for spawn-level failures. The call itself
-      // succeeded, so this cannot fail the edit — it becomes a finding.
-      return { checker: checker.name, output: `checker failed to start: ${errorMessage(error)}` }
+      return {
+        kind,
+        name: checker.name,
+        argv,
+        cwd,
+        startedAt: started,
+        durationMs: Date.now() - started,
+        status: signal.aborted ? 'cancelled' : 'failed',
+        output: signal.aborted ? 'cancelled' : errorMessage(error),
+      }
     } finally {
       clearTimeout(timer)
     }
   }
 
-  /**
-   * Run every checker claiming the edited file and render one context message.
-   * @param filePath - the edited path, as reported by the tool.
-   * @param signal - the tool call's cancellation signal.
-   * @returns the context to attach, or undefined when nothing was found.
-   */
-  async function diagnose(filePath: string, signal: AbortSignal): Promise<UserMessage | undefined> {
+  /** Run every matching operation and retain both trajectory evidence and model guidance. */
+  async function diagnose(
+    filePath: string,
+    signal: AbortSignal,
+  ): Promise<{ operations: OperationResult[]; context?: UserMessage }> {
     const absolute = isAbsolute(filePath) ? filePath : resolve(filePath)
     const ext = extensionOf(absolute)
     const language = languageForExtension(ext)
-    if (!language || !config.languages.get()[language]) return undefined
-    const fixers = (fixersByExtension.get(ext) ?? []).filter(item => effectiveEnabled(ext, item.name))
-    const checkers = (byExtension.get(ext) ?? []).filter(item => effectiveEnabled(ext, item.name))
-    if (!fixers.length && !checkers.length) return undefined
-    const fixFindings: Finding[] = []
+    if (!language || !config.languages.get()[language]) return { operations: [] }
+    const fixers = (fixersByExtension.get(ext) ?? []).filter((item) => effectiveEnabled(ext, item.name))
+    const checkers = (byExtension.get(ext) ?? []).filter((item) => effectiveEnabled(ext, item.name))
+    if (!fixers.length && !checkers.length) return { operations: [] }
+
+    const operations: OperationResult[] = []
     for (const fixer of fixers) {
       if (signal.aborted) break
-      const finding = await runChecker(fixer, absolute, signal)
-      if (finding) {
-        fixFindings.push(finding)
-        // A failing mutation must not be followed by further mutations.
-        break
-      }
+      const beforeText = readText(absolute)
+      const operation = await runOperation('fixer', fixer, absolute, signal)
+      const afterText = readText(absolute)
+      const change =
+        beforeText !== undefined && afterText !== undefined && beforeText !== afterText
+          ? { path: absolute, beforeText, afterText }
+          : undefined
+      operations.push(change === undefined ? operation : { ...operation, change })
+      if (operation.status !== 'clean') break
     }
-    const findings = [...fixFindings, ...(await Promise.all(checkers.map(checker => runChecker(checker, absolute, signal))))
-      .filter((finding): finding is Finding => finding !== undefined)]
-    if (findings.length === 0) return undefined
+    operations.push(
+      ...(await Promise.all(checkers.map((checker) => runOperation('checker', checker, absolute, signal)))),
+    )
 
-    const body = findings.map(finding => `## ${finding.checker}\n${finding.output}`).join('\n\n')
-    const text = `Auto Code Correct results for ${absolute} after your edit:\n\n${boundText(body, config.maxDiagnosticChars)}\n\n`
-      + 'Automatic fixes have run where configured. Address remaining findings if caused by your edit. '
-      + 'Pre-existing findings unrelated to your change do not need to be fixed.'
-    return createUserMessage({
-      content: [{ type: 'text', text }],
-      source: {
-        ...PLUGIN_SOURCE,
-        form: 'notice',
-        summary: `${findings.length} checker finding(s) on ${absolute.slice(absolute.lastIndexOf('/') + 1)}`,
-      },
-    })
+    const findings = operations.filter(
+      (operation) => operation.status !== 'clean' && operation.status !== 'cancelled',
+    )
+    if (findings.length === 0) return { operations }
+    const body = findings
+      .map((operation) => `## ${operation.name} (${operation.status})\n${operation.output}`)
+      .join('\n\n')
+    const text =
+      `Auto Code Correct results for ${absolute} after your edit:\n\n${boundText(body, config.maxDiagnosticChars)}\n\n` +
+      'Automatic fixes have run where configured. Address remaining findings if caused by your edit. ' +
+      'Pre-existing findings unrelated to your change do not need to be fixed.'
+    return {
+      operations,
+      context: createUserMessage({
+        content: [{ type: 'text', text }],
+        source: {
+          ...PLUGIN_SOURCE,
+          form: 'notice',
+          summary: `${findings.length} ACC operation finding(s) on ${absolute.slice(absolute.lastIndexOf('/') + 1)}`,
+        },
+      }),
+    }
   }
 
-  ctx.on('tools/post-execute', async (exec, result, next): Promise<PostToolDecision> => {
-    const downstream = await next()
-    // A blocked call is already an error the model must react to; linting the
-    // file it wrote would bury that feedback under unrelated findings.
-    if (downstream.kind === 'block') return downstream
-    if (!watchedTools.has(exec.name) || result.isError) return downstream
-    const filePath = editedPath(exec, result)
-    if (filePath === undefined) return downstream
+  function readText(filePath: string | undefined): string | undefined {
+    if (filePath === undefined) return undefined
+    try {
+      return readFileSync(filePath, 'utf8')
+    } catch {
+      return undefined
+    }
+  }
 
-    let hookIssue: UserMessage | undefined
+  function operationRecord(operation: OperationResult, index: number): AccOperationRecord {
+    return {
+      id: `${index}:${operation.name}`,
+      kind: operation.kind,
+      name: operation.name,
+      argv: operation.argv,
+      cwd: operation.cwd,
+      startedAt: operation.startedAt,
+      endedAt: operation.startedAt + operation.durationMs,
+      status: operation.status,
+      exitCode: operation.exitCode ?? null,
+      signal: operation.signal ?? null,
+      output: operation.output,
+      change: operation.change ?? null,
+    }
+  }
+
+  const feedbackByCallId = new Map<string, UserMessage[]>()
+
+  // Run after a successful file mutation. ACC records its own actual operations
+  // as a plugin-owned Session event; it never alters or fabricates tool/PTC events.
+  ctx.on('tools/execute', async (exec: ToolDispatchExecution, next) => {
+    const result = await next()
+    if (!watchedTools.has(exec.name) || result.isError) return result
+    const filePath = editedPath(exec, result)
+    if (filePath === undefined) return result
+
+    const feedback: UserMessage[] = []
     try {
       syncGitHygiene(isAbsolute(filePath) ? dirname(filePath) : dirname(resolve(filePath)), hygienePolicy())
     } catch (error) {
-      hookIssue = createUserMessage({
-        content: [{ type: 'text', text: 'ACC Git pre-commit setup failed: ' + errorMessage(error) }],
-        source: { ...PLUGIN_SOURCE, form: 'notice', summary: 'ACC Git hygiene setup failure' },
-      })
+      feedback.push(
+        createUserMessage({
+          content: [{ type: 'text', text: 'ACC Git pre-commit setup failed: ' + errorMessage(error) }],
+          source: { ...PLUGIN_SOURCE, form: 'notice', summary: 'ACC Git hygiene setup failure' },
+        }),
+      )
     }
     const diagnostics = await diagnose(filePath, exec.signal)
-    if (!diagnostics && !hookIssue) return downstream
+    if (diagnostics.context) feedback.push(diagnostics.context)
+    if (feedback.length > 0) feedbackByCallId.set(String(exec.callId), feedback)
+    if (diagnostics.operations.length === 0) return result
+
+    const metadata: AccResultMeta = {
+      version: ACC_RESULT_META_VERSION,
+      parentCallId: String(exec.callId),
+      parentToolName: exec.name,
+      filePath,
+      operations: diagnostics.operations.map((operation, index) => operationRecord(operation, index)),
+    }
+    // `Session.append` is the supported durable event path. The event is owned
+    // by ACC, carries only lossless JSON facts, and leaves the native tool result
+    // untouched. Calls outside an Agent context still receive model diagnostics.
+    exec.agent?.session.append('auto-code-correct/operation', metadata)
+    return result
+  })
+
+  ctx.on('tools/post-execute', async (exec, _result, next): Promise<PostToolDecision> => {
+    const downstream = await next()
+    const feedback = feedbackByCallId.get(String(exec.callId))
+    feedbackByCallId.delete(String(exec.callId))
+    if (feedback === undefined || feedback.length === 0 || downstream.kind === 'block') return downstream
     return {
       ...downstream,
-      additionalContexts: [...downstream.additionalContexts ?? [], ...hookIssue ? [hookIssue] : [], ...diagnostics ? [diagnostics] : []],
+      additionalContexts: [...(downstream.additionalContexts ?? []), ...feedback],
     }
   })
 }

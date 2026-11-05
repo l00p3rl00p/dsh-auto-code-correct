@@ -15,7 +15,7 @@ const cliPath = fileURLToPath(new URL('./cli.js', import.meta.url))
 const actions = new Set(['status', 'install', 'uninstall', 'link'])
 
 export function registerAccCommands(ctx: Context): void {
-  ctx.inject(['commands', 'subprocess'], commandCtx => {
+  ctx.inject(['commands', 'subprocess'], (commandCtx) => {
     commandCtx.commands.register({
       name: 'acc',
       description: 'Inspect, install, or remove an Auto Code Correct dependency',
@@ -23,23 +23,35 @@ export function registerAccCommands(ctx: Context): void {
       handler: async ({ rawInput }) => {
         const input = rawInput.trim()
         const [action = '', id = '', ...directoryParts] = input.split(/\s+/)
-        if (!actions.has(action) || !CAPABILITIES.some(cap => cap.id === id)) {
-          return { kind: 'error', text: 'Usage: /acc status|install|uninstall|link <capability-id> [installation-directory/path]' }
+        if (!actions.has(action) || !CAPABILITIES.some((cap) => cap.id === id)) {
+          return {
+            kind: 'error',
+            text: 'Usage: /acc status|install|uninstall|link <capability-id> [installation-directory/path]',
+          }
         }
         const directory = directoryParts.join(' ')
         if (directory.includes('\0')) return { kind: 'error', text: 'Invalid installation directory' }
         if (action === 'link') {
-          if (!isAbsolute(directory)) return { kind: 'error', text: 'Link requires an absolute path to an executable.' }
-          const cap = CAPABILITIES.find(item => item.id === id)!
+          if (!isAbsolute(directory))
+            return { kind: 'error', text: 'Link requires an absolute path to an executable.' }
+          const cap = CAPABILITIES.find((item) => item.id === id)!
           const found = findTool(cap.executable, { explicit: directory })
-          if (found.status !== 'installed') return { kind: 'error', text: 'Executable not found or not executable: ' + directory }
+          if (found.status !== 'installed')
+            return { kind: 'error', text: 'Executable not found or not executable: ' + directory }
           const editor = commandCtx.get('configEditor')
           const entry = ctx.fiber?.entry
-          if (!editor || !entry) return { kind: 'error', text: 'DSH config editor unavailable; set ACC executables through profile configuration.' }
+          if (!editor || !entry)
+            return {
+              kind: 'error',
+              text: 'DSH config editor unavailable; set ACC executables through profile configuration.',
+            }
           try {
-            await editor.edit(entry, current => ({
+            await editor.edit(entry, (current) => ({
               ...current,
-              executables: { ...((current.executables ?? {}) as Record<string, string>), [cap.executable]: found.path! },
+              executables: {
+                ...((current.executables ?? {}) as Record<string, string>),
+                [cap.executable]: found.path!,
+              },
             }))
             return { kind: 'success', text: 'Linked ' + cap.executable + ' to ' + found.path }
           } catch (error) {
@@ -47,7 +59,7 @@ export function registerAccCommands(ctx: Context): void {
           }
         }
 
-        const argv = [process.execPath, cliPath, action, id, ...directory ? ['--prefix', directory] : []]
+        const argv = [process.execPath, cliPath, action, id, ...(directory ? ['--prefix', directory] : [])]
         const maxBytes = 16_384
         try {
           const child = commandCtx.subprocess.spawn({

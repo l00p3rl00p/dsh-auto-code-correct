@@ -2,6 +2,14 @@
 
 **Authority:** Deployment and file layouts differ by host. ACC's own tool discovery and launch behavior are in `src/`; package compatibility and plugins are declared in `package.json` / `cordis.patch.yml`. The QDev Docker Compose repository owns QDev environment installation, volumes and executable provision; this repository must not duplicate or modify that deployment.
 
+## Web loader, installed package, and recovery scope
+
+The Scratchpad checkout at `/home/qdev/scratchpad/plugins/dsh-auto-code-correct` is a source/build location **when that mount exists**, not DSH's installed profile package. The actual installed dependency is managed by `dsh plugin --profile web` inside `$DSH_HOME/profiles/web` (normally `/home/qdev/.dsh/profiles/web`). The DSH CLI forwards package operations to pnpm in the chosen profile, and plugin bundle activation requires restarting the Web process. Inspect the live profile/configuration rather than assuming the source and installed package are identical. <https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/cli/reference/README.md>
+
+The client bundle uses the native DSH browser ModuleLoader, which does not resolve arbitrary Node dependencies. `tsdown.config.ts` must bundle unsupported imports and `scripts/check-package.mjs` is the CI packaging safeguard. See [shared safety lessons](https://github.com/l00p3rl00p/quatrus-scratchpad/blob/main/plugins/plugin-lessons.md) and [emergency recovery](RUNBOOK.md#emergency-recovery--bad-web-plugin). Do not remove all DSH profiles or the container to recover one plugin.
+
+**ACC readiness lifecycle (v0.1.9):** `src/client/index.tsx` mounts `TYPERT_REMOTE` and creates a child `ctx.inject(... 'remote.accReadiness' ...)` scope before accessing `scope.remote.accReadiness.snapshot`. The Host readiness service is defined in `src/readiness-service.ts`. `remote.accReadiness` is **not** a parent-level injection requirement; declaring it on the parent would block creation of its own service. Verify actual installed UI load and Refresh separately from package compilation. See [single plugin lessons authority](https://github.com/l00p3rl00p/quatrus-scratchpad/blob/main/plugins/plugin-lessons.md).
+
 ## Exact source files, settings and flags
 
 These are **literal repository-relative paths and identifiers**, not shorthand names or inferred host locations. Open the linked file to inspect the authoritative setting. Runtime filesystem locations below are defaults or paths documented by the upstream deployment, **not** a claim that every machine uses them.
@@ -16,8 +24,8 @@ These are **literal repository-relative paths and identifiers**, not shorthand n
 | Command-line tool manager, installation ownership | [`src/cli.ts`](src/cli.ts) | `ACC_HOME`; `acc-tools list`, `status`, `find`, `install`, `uninstall`, `hooks install`, `hygiene`; `--prefix DIR` on supported CLI actions |
 | DSH chat command and config editor | [`src/commands.ts`](src/commands.ts) | `/acc status`, `/acc install`, `/acc uninstall`, `/acc link`; `/acc link` writes the `executables[executable]` config field through the native editor |
 | Package, dependency and script version authority | [`package.json`](package.json) | `engines.node`, `engines.dsh`, `dependencies`, `peerDependencies`, `devDependencies`, `scripts.verify`, `scripts.packcheck`, `dsh.bundle.patch`, `bin.acc-tools` |
-| Compiled output paths | [`tsdown.config.ts`](tsdown.config.ts) | `src/index.ts` → `lib/index.js`, `src/cli.ts` → `lib/cli.js`, `src/client/index.tsx` → `lib/client.js` |
-| Packaging and cross-repo verification environment | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | GitHub Actions secret `ACC_QDOCKER_READ_TOKEN`; job environment `ACC_DOCKER_INSTALLER`; read-only checkout path `.acc-docker-source/stacks/llm-runtime/install-code-and-quality.sh` |
+| Compiled output paths | [`tsdown.config.ts`](tsdown.config.ts) | `src/index.ts` → `lib/index.js`, `src/cli.ts` → `lib/cli.js`, `src/client/index.tsx` + `src/client/autocorrect-view.tsx` → `lib/client.js` |
+| Packaging and cross-repo verification environment | [`.github/workflows/dsh-auto-code-correct-package.yml`](.github/workflows/dsh-auto-code-correct-package.yml), [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | Root workflow builds, clean-profile installs, and uploads the versioned `.tgz`; package-local workflow additionally supports standalone extraction. The optional cross-repo check uses `ACC_QDOCKER_READ_TOKEN`, `ACC_DOCKER_INSTALLER`, and `.acc-docker-source/stacks/llm-runtime/install-code-and-quality.sh`. |
 | Generated Git hygiene projection (not user-editable) | [`src/hygiene-hook.ts`](src/hygiene-hook.ts), [`src/cli.ts`](src/cli.ts) | `<git-dir>/acc-hygiene-effective.json` with JSON `enabled` boolean and `checks` capability IDs; generated from native DSH `hygieneEnabled` / `capabilities` settings |
 | Historical, **inactive** installation experiments | [`hooks.json`](hooks.json), [`check.sh`](check.sh) | Legacy `hooks[].event: post-tool` and `DSH_HOME` fallback in `check.sh`; **not** the Cordis plugin install mechanism |
 
@@ -69,9 +77,19 @@ export ACC_TOOL_PATHS=/path/to/existing/tools/bin
 
 
 
+## Delivered component map
+
+| Component | Entry | Loaded by | Purpose |
+|---|---|---|---|
+| Host plugin | `lib/index.js` | Cordis Host bundle | Correction, diagnostics, LSP routing, and metadata enrichment |
+| Web settings | `lib/client.js` from `src/client/index.tsx` | Immediate `dsh.client` Web injection | Native ConfigForms settings page |
+| Web results view | `lib/client.js` from `src/client/autocorrect-view.tsx` | Immediate client load, then `conversation.view` registration | Always-visible AutoCorrect session tab |
+| CLI | `lib/cli.js` | `acc-tools` binary and generated Git hook | Tool discovery, linking, hygiene, hook synchronization |
+| Cordis patch | `cordis.patch.yml` | Bundle loader | Native registration and profile defaults |
+
 ## Host plugin versus Web client plugin
 
-ACC has **two distinct deliverables** in one DSH package: the host plugin (`lib/index.js`) and the Web settings client (`lib/client.js`). The client is declared in `package.json` under `dsh.client` and built from `src/client/index.tsx`. It registers the DSH-native `plugins.bundle.config` UI slot and uses ConfigForms for the active Cordis entry. The UI is expected under **Plugins → Installed → dsh-auto-code-correct**, not in a standalone Docker window or the general built-in settings.
+ACC has **two distinct deliverables** in one DSH package: the host plugin (`lib/index.js`) and the Web client (`lib/client.js`), which contains both the settings page and the session-scoped **AutoCorrect** conversation tab. The client is declared in `package.json` under `dsh.client` with immediate Web loading and built from `src/client/index.tsx`. Its client entry explicitly injects `slots`, `configForms`, and `uiConversation`: the last service owns conversation-view registration. It registers the DSH-native `plugins.bundle.config` UI slot and binds the active `auto-code-correct` namespace directly through `configForms.get(...)`; bundle detail slots provide the page view but do not supply a row-style form prop. The UI is expected under **Plugins → Installed → dsh-auto-code-correct**, not in a standalone Docker window or the general built-in settings.
 
 Check both surfaces independently: `dsh --profile web --dump-config` for host configuration and the actual DSH Web plugin detail page for the client. A missing UI is a client injection/registration/loader failure, not proof that the host entry is absent. A visible UI is not proof that ACC's post-edit and Git hygiene actions fire. Follow [RUNBOOK.md](RUNBOOK.md#prove-the-acc-settings-window-is-present) for the full acceptance procedure.
 
@@ -92,7 +110,7 @@ For a normal local checkout, discovery uses that host's PATH/project executables
 
 | Group | Exact implementation | Native setting/trigger | Runtime boundary |
 |---|---|---|---|
-| Auto-Correct | `src/index.ts`, `cordis.patch.yml`, `src/capabilities.ts` | `config.languages`, `config.capabilities`, `config.fixers`, `config.checkers`, `config.tools` on `tools/post-execute` | Only enabled matching edited-file pipeline executes |
+| Auto-Correct | `src/index.ts`, `src/operation-record.ts`, `cordis.patch.yml`, `src/capabilities.ts` | `config.languages`, `config.capabilities`, `config.fixers`, `config.checkers`, `config.tools` on `tools/execute`; durable `tool/result.meta.autoCodeCorrect` | Only enabled matching edited-file pipeline executes; completed results appear in AutoCorrect |
 | Language Servers | `src/index.ts`, `src/client/index.tsx` | `config.languageServers`, `config.languages`, `config.capabilities`, `config.executables`; native `dsh-lsp-stdio` and `dsh-lsp-actions` | Disabled language or server must not be started |
 | Code Hygiene | `src/hygiene-hook.ts`, `src/cli.ts`, `src/client/index.tsx` | Native `config.hygieneEnabled` and `config.capabilities` are projected to `<git-dir>/acc-hygiene-effective.json`; installed Git pre-commit hook invokes `acc-tools hygiene` | On by default: `git-diff`, `gitleaks`, `shellcheck`; setting off skips all automatic hook checks. Changes propagate on ACC activation or next successful edit. |
 

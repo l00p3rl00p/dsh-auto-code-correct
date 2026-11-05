@@ -1,0 +1,63 @@
+name: ACC standalone package — native DSH verification
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Build and publish installable ACC bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+      - name: Verify source and package
+        run: pnpm run verify
+      # verify includes check:package, which audits the compiled browser require() graph.
+      # A server-side clean install alone cannot prove that the Web ModuleLoader boots.
+      - name: Package installable DSH plugin
+        run: |
+          mkdir -p dist
+          pnpm pack --pack-destination dist
+      - name: Read package version
+        id: package
+        run: |
+          version=$(node -p "require('./package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Verify package contents
+        run: |
+          ARTIFACT="dist/dsh-auto-code-correct-${{ steps.package.outputs.version }}.tgz"
+          test -f "$ARTIFACT"
+          tar -tzf "$ARTIFACT" | grep -q 'package/lib/index.js'
+          tar -tzf "$ARTIFACT" | grep -q 'package/lib/client.js'
+          tar -tzf "$ARTIFACT" | grep -q 'package/lib/cli.js'
+          tar -tzf "$ARTIFACT" | grep -q 'package/cordis.patch.yml'
+      - name: Install into a clean official DSH profile
+        env:
+          DSH_HOME: ${{ runner.temp }}/acc-dsh-home
+        run: |
+          ARTIFACT="./dist/dsh-auto-code-correct-${{ steps.package.outputs.version }}.tgz"
+          pnpm dlx --package=@deepseek-ai/dsh@0.2.1-rc.5 dsh plugin --profile acc-ci add \
+            @deepseek-ai/dsh-lsp@0.2.1-rc.5 \
+            @deepseek-ai/dsh-lsp-stdio@0.2.1-rc.5 \
+            "$ARTIFACT"
+          pnpm dlx --package=@deepseek-ai/dsh@0.2.1-rc.5 dsh --profile acc-ci --dump-config | grep -q auto-code-correct
+      - name: Upload independently installable plugin artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsh-auto-code-correct-plugin-${{ steps.package.outputs.version }}
+          path: dist/dsh-auto-code-correct-${{ steps.package.outputs.version }}.tgz
+          if-no-files-found: error
+          retention-days: 90
