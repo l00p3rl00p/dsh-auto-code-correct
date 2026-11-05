@@ -1,6 +1,6 @@
 {
   "name": "dsh-auto-code-correct",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "Native DeepSeek Harness Auto Code Correct: language gates, opt-in tool manager, autofix and hygiene",
   "keywords": [
     "dsh",
